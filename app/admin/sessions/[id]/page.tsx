@@ -52,6 +52,11 @@ import {
   Check,
   Minus,
   ChevronRight,
+  ImageOff,
+  Play,
+  UserCheck,
+  DoorOpen,
+  Lock,
 } from 'lucide-react';
 
 export default function AdminSessionDetailPage({
@@ -75,10 +80,21 @@ export default function AdminSessionDetailPage({
     max_players: 100,
     description: '',
   });
+  const [coverImage, setCoverImage] = useState<File | null>(null);
+  const [removeCoverImage, setRemoveCoverImage] = useState(false);
 
   // Delete dialog state
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // Lifecycle action state
+  const [actionLoading, setActionLoading] = useState(false);
+  const [actionConfirmOpen, setActionConfirmOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{
+    endpoint: string;
+    label: string;
+    successMsg: string;
+  } | null>(null);
 
   useEffect(() => {
     async function fetchSession() {
@@ -120,6 +136,8 @@ export default function AdminSessionDetailPage({
         max_players: currentSession.max_players,
         description: currentSession.description ?? '',
       });
+      setCoverImage(null);
+      setRemoveCoverImage(false);
       setEditErrors({});
     }
   }, [editOpen, currentSession]);
@@ -130,9 +148,18 @@ export default function AdminSessionDetailPage({
     setEditErrors({});
 
     try {
-      const res = await api.put<{ data: Session }>(
+      const fd = new FormData();
+      fd.append('_method', 'PUT');
+      fd.append('name', editForm.name);
+      fd.append('scheduled_at', editForm.scheduled_at);
+      fd.append('max_players', String(editForm.max_players));
+      if (editForm.description) fd.append('description', editForm.description);
+      if (coverImage) fd.append('cover_image', coverImage);
+      if (removeCoverImage) fd.append('remove_cover_image', '1');
+      const res = await api.post<{ data: Session }>(
         `/admin/sessions/${id}`,
-        editForm
+        fd,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
       );
       const updated = res.data.data ?? (res.data as unknown as Session);
       setCurrentSession(updated);
@@ -164,6 +191,34 @@ export default function AdminSessionDetailPage({
     }
   }
 
+  function confirmAction(endpoint: string, label: string, successMsg: string) {
+    setPendingAction({ endpoint, label, successMsg });
+    setActionConfirmOpen(true);
+  }
+
+  async function executeAction() {
+    if (!pendingAction) return;
+    setActionLoading(true);
+    try {
+      const res = await api.post<{ data: Session }>(
+        `/admin/sessions/${id}/game/${pendingAction.endpoint}`
+      );
+      const updated = res.data.data ?? (res.data as unknown as Session);
+      setCurrentSession(updated);
+      updateSession(updated);
+      toast.success(pendingAction.successMsg);
+    } catch (err: unknown) {
+      const apiErr = (
+        err as { response?: { data?: { message?: string } } }
+      ).response?.data;
+      toast.error(apiErr?.message ?? 'Action impossible');
+    } finally {
+      setActionLoading(false);
+      setActionConfirmOpen(false);
+      setPendingAction(null);
+    }
+  }
+
   if (loading) {
     return (
       <div className="animate-fade-in space-y-6">
@@ -182,8 +237,41 @@ export default function AdminSessionDetailPage({
 
   const canEdit =
     currentSession.status === 'draft' ||
-    currentSession.status === 'registration_open';
+    currentSession.status === 'registration_open' ||
+    currentSession.status === 'registration_closed' ||
+    currentSession.status === 'preselection';
   const canDelete = currentSession.status === 'draft';
+
+  const lifecycleAction = (() => {
+    switch (currentSession.status) {
+      case 'draft':
+        return {
+          endpoint: 'open-registration',
+          label: 'Ouvrir les inscriptions',
+          successMsg: 'Inscriptions ouvertes',
+          icon: DoorOpen,
+          variant: 'default' as const,
+        };
+      case 'registration_open':
+        return {
+          endpoint: 'close-registration',
+          label: 'Clôturer les inscriptions',
+          successMsg: 'Inscriptions clôturées',
+          icon: Lock,
+          variant: 'default' as const,
+        };
+      case 'registration_closed':
+        return {
+          endpoint: 'open-preselection',
+          label: 'Ouvrir la préselection',
+          successMsg: 'Phase de préselection ouverte',
+          icon: UserCheck,
+          variant: 'default' as const,
+        };
+      default:
+        return null;
+    }
+  })();
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -211,6 +299,23 @@ export default function AdminSessionDetailPage({
         </div>
 
         <div className="flex gap-2">
+          {lifecycleAction && (
+            <Button
+              size="sm"
+              variant={lifecycleAction.variant}
+              onClick={() =>
+                confirmAction(
+                  lifecycleAction.endpoint,
+                  lifecycleAction.label,
+                  lifecycleAction.successMsg
+                )
+              }
+            >
+              <lifecycleAction.icon className="mr-1 h-4 w-4" />
+              {lifecycleAction.label}
+            </Button>
+          )}
+
           {canEdit && (
             <Dialog open={editOpen} onOpenChange={setEditOpen}>
               <DialogTrigger asChild>
@@ -298,6 +403,44 @@ export default function AdminSessionDetailPage({
                       }
                       rows={3}
                     />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="edit-cover">Image de couverture</Label>
+                    {currentSession?.cover_image_url && !removeCoverImage ? (
+                      <div className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+                        <span className="flex-1 truncate text-muted-foreground">
+                          {currentSession.cover_image_url.split('/').pop()}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 gap-1 text-destructive hover:text-destructive"
+                          onClick={() => {
+                            setRemoveCoverImage(true);
+                            setCoverImage(null);
+                          }}
+                        >
+                          <ImageOff className="h-3.5 w-3.5" />
+                          Supprimer
+                        </Button>
+                      </div>
+                    ) : (
+                      <Input
+                        id="edit-cover"
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          setCoverImage(e.target.files?.[0] ?? null);
+                          setRemoveCoverImage(false);
+                        }}
+                      />
+                    )}
+                    {editErrors.cover_image?.[0] && (
+                      <p className="text-sm text-destructive">
+                        {editErrors.cover_image[0]}
+                      </p>
+                    )}
                   </div>
                   <DialogFooter>
                     <Button
@@ -397,7 +540,7 @@ export default function AdminSessionDetailPage({
             <div>
               <p className="text-sm text-muted-foreground">Cagnotte</p>
               <p className="font-semibold">
-                {currentSession.jackpot.toLocaleString('fr-FR')} pts
+                {(currentSession.jackpot ?? 0).toLocaleString('fr-FR')} pts
               </p>
             </div>
           </CardContent>
@@ -421,6 +564,28 @@ export default function AdminSessionDetailPage({
       <Separator />
 
       {/* Rounds table */}
+
+      
+      {/* Pré-sélection */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Questions de pré-sélection</CardTitle>
+              <CardDescription>
+                Gérez les questions posées aux candidats lors de la phase de pré-sélection.
+              </CardDescription>
+            </div>
+            <Button variant="outline" size="sm" asChild>
+              <Link href={`/admin/sessions/${id}/preselection`}>
+                Gérer
+                <ChevronRight className="ml-1 h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
+        </CardHeader>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>Manches</CardTitle>
@@ -505,6 +670,32 @@ export default function AdminSessionDetailPage({
           </Table>
         </CardContent>
       </Card>
+
+      {/* Action confirmation dialog */}
+      <Dialog open={actionConfirmOpen} onOpenChange={setActionConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{pendingAction?.label}</DialogTitle>
+            <DialogDescription>
+              Êtes-vous sûr de vouloir effectuer cette action pour la session
+              &laquo; {currentSession.name} &raquo; ?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setActionConfirmOpen(false)}
+            >
+              Annuler
+            </Button>
+            <Button onClick={executeAction} disabled={actionLoading}>
+              {actionLoading && <Loader2 className="animate-spin" />}
+              Confirmer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+

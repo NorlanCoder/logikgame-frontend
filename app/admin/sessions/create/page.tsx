@@ -19,6 +19,7 @@ export default function CreateSessionPage() {
     max_players: 100,
     description: '',
   });
+  const [coverImage, setCoverImage] = useState<File | null>(null);
 
   function updateField(field: string, value: string | number) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -30,7 +31,15 @@ export default function CreateSessionPage() {
     setErrors({});
 
     try {
-      await api.post('/admin/sessions', form);
+      const fd = new FormData();
+      fd.append('name', form.name);
+      fd.append('scheduled_at', form.scheduled_at);
+      fd.append('max_players', String(form.max_players));
+      if (form.description) fd.append('description', form.description);
+      if (coverImage) fd.append('cover_image', coverImage);
+      await api.post('/admin/sessions', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
       toast.success('Session créée avec succès');
       router.push('/admin/sessions');
     } catch (err: unknown) {
@@ -97,6 +106,19 @@ export default function CreateSessionPage() {
               />
               {errors.max_players?.[0] && (
                 <p className="text-sm text-destructive">{errors.max_players[0]}</p>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="cover_image">Image de couverture (optionnel)</Label>
+              <Input
+                id="cover_image"
+                type="file"
+                accept="image/*"
+                onChange={(e) => setCoverImage(e.target.files?.[0] ?? null)}
+              />
+              {errors.cover_image?.[0] && (
+                <p className="text-sm text-destructive">{errors.cover_image[0]}</p>
               )}
             </div>
 

@@ -140,6 +140,7 @@ export interface Question {
   closed_at: string | null;
   choices?: QuestionChoice[];
   hint?: QuestionHint;
+  second_chance_question?: SecondChanceQuestion | null;
 }
 
 export interface QuestionChoice {
@@ -157,6 +158,23 @@ export interface QuestionHint {
   range_hint_text?: string;
   range_min?: number;
   range_max?: number;
+}
+
+export interface SecondChanceQuestion {
+  id: number;
+  main_question_id: number;
+  text: string;
+  answer_type: AnswerType;
+  correct_answer?: string;
+  number_is_decimal: boolean;
+  duration: number;
+  display_order: number;
+  media_url: string | null;
+  media_type: MediaType;
+  status: QuestionStatus;
+  launched_at: string | null;
+  closed_at: string | null;
+  choices?: QuestionChoice[];
 }
 
 export interface Registration {
@@ -207,15 +225,16 @@ export interface Player {
 
 export interface PreselectionQuestion {
   id: number;
+  session_id: number;
   text: string;
   answer_type: AnswerType;
-  duration: number;
+  correct_answer: string | null;
   display_order: number;
-  media_url: string | null;
-  media_type: MediaType;
+  media_url?: string | null;
   choices?: {
     id: number;
     label: string;
+    is_correct: boolean;
     display_order: number;
   }[];
 }

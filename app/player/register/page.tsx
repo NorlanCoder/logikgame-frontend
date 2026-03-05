@@ -1,18 +1,20 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Button, Input, Label } from '@/components/ui';
 import api from '@/lib/api';
 import type { ApiError } from '@/lib/types';
 import { Loader2 } from 'lucide-react';
 
-export default function PlayerRegisterPage() {
+function RegisterForm() {
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [errors, setErrors] = useState<Record<string, string[]>>({});
 
   const [form, setForm] = useState({
-    session_id: '',
+    session_id: searchParams.get('session_id') ?? '',
     full_name: '',
     email: '',
     phone: '',
@@ -148,5 +150,19 @@ export default function PlayerRegisterPage() {
         </form>
       </div>
     </div>
+  );
+}
+
+export default function PlayerRegisterPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center p-8">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-400" />
+        </div>
+      }
+    >
+      <RegisterForm />
+    </Suspense>
   );
 }
