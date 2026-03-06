@@ -225,12 +225,15 @@ export interface Player {
 
 export interface PreselectionQuestion {
   id: number;
-  session_id: number;
+  session_id?: number;
   text: string;
   answer_type: AnswerType;
   correct_answer: string | null;
+  duration: number;
+  number_is_decimal: boolean;
   display_order: number;
   media_url?: string | null;
+  media_type?: MediaType;
   choices?: {
     id: number;
     label: string;
