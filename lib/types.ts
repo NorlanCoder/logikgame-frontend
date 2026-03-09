@@ -349,6 +349,8 @@ export interface WsQuestionClosed {
   answers_received: number;
   correct_count: number;
   eliminated_count: number;
+  in_danger_count: number;
+  in_danger_players: string[];
 }
 
 export interface WsPlayerEliminated {
@@ -390,6 +392,11 @@ export interface WsHintApplied {
   hint: {
     hint_type: HintType;
     removed_choice_ids?: number[];
+    revealed_letters?: string[];
+    masked_answer?: string;
+    range_hint_text?: string;
+    range_min?: number;
+    range_max?: number;
     time_penalty_seconds: number;
   };
 }
@@ -397,6 +404,21 @@ export interface WsHintApplied {
 export interface WsGameEnded {
   final_jackpot: number;
   winners: { pseudo: string; final_gain: number }[];
+}
+
+export interface WsSecondChanceLaunched {
+  main_question_id: number;
+  failed_player_ids: number[];
+  question: {
+    id: number;
+    text: string;
+    answer_type: AnswerType;
+    media_url: string | null;
+    media_type: MediaType;
+    duration: number;
+    launched_at: string;
+    choices?: QuestionChoice[];
+  };
 }
 
 // ─── API Error ───────────────────────────────────────────────

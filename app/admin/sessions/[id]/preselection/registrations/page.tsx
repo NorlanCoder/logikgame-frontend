@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import api from '@/lib/api';
 import type { RegistrationStatus } from '@/lib/types';
 import { toast } from 'sonner';
@@ -43,6 +43,7 @@ import {
   Loader2,
   RefreshCw,
   UserCheck,
+  MailCheck,
 } from 'lucide-react';
 
 // ─── Types locaux ────────────────────────────────────────────
@@ -127,17 +128,24 @@ export default function PreselectionRegistrationsPage({
 }) {
   const { id } = use(params);
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [stats, setStats] = useState<PreselectionStats | null>(null);
   const [registrations, setRegistrations] = useState<PreselectionRegistration[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const initialStatus = searchParams.get('status') ?? 'all';
+  const [statusFilter, setStatusFilter] = useState<string>(initialStatus);
   const [refreshing, setRefreshing] = useState(false);
+  const [sessionStatus, setSessionStatus] = useState<string | null>(null);
 
   // Sélection manuelle
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [selectDialogOpen, setSelectDialogOpen] = useState(false);
   const [selectLoading, setSelectLoading] = useState(false);
+
+  // Confirmation finale
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [confirmLoading, setConfirmLoading] = useState(false);
 
   async function fetchData(filter?: string) {
     const params = filter && filter !== 'all' ? `?status=${filter}` : '';
@@ -157,6 +165,15 @@ export default function PreselectionRegistrationsPage({
     fetchData(statusFilter).finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, statusFilter]);
+
+  useEffect(() => {
+    api.get(`/admin/sessions/${id}`)
+      .then((res) => {
+        const session = res.data.data ?? res.data;
+        setSessionStatus(session.status);
+      })
+      .catch(() => {});
+  }, [id]);
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -186,7 +203,7 @@ export default function PreselectionRegistrationsPage({
       await api.post(`/admin/sessions/${id}/game/select-players`, {
         registration_ids: Array.from(selected),
       });
-      toast.success(`${selected.size} joueur(s) sélectionné(s) avec succès.`);
+      toast.success(`Sélection sauvegardée — ${selected.size} joueur(s) marqué(s).`);
       setSelectDialogOpen(false);
       setSelected(new Set());
       await fetchData(statusFilter);
@@ -196,6 +213,23 @@ export default function PreselectionRegistrationsPage({
       toast.error(msg ?? 'Erreur lors de la sélection.');
     } finally {
       setSelectLoading(false);
+    }
+  }
+
+  async function handleConfirmSelection() {
+    setConfirmLoading(true);
+    try {
+      const res = await api.post<{ data: { status: string } }>(`/admin/sessions/${id}/game/confirm-selection`);
+      const updated = res.data.data ?? (res.data as unknown as { status: string });
+      setSessionStatus(updated.status);
+      toast.success('Sélection confirmée — invitations envoyées aux joueurs.');
+      setConfirmDialogOpen(false);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })
+        .response?.data?.message;
+      toast.error(msg ?? 'Erreur lors de la confirmation.');
+    } finally {
+      setConfirmLoading(false);
     }
   }
 
@@ -235,13 +269,23 @@ export default function PreselectionRegistrationsPage({
             Actualiser
           </Button>
           <Button
+            variant="outline"
             size="sm"
             disabled={selected.size === 0}
             onClick={() => setSelectDialogOpen(true)}
           >
             <UserCheck className="mr-2 h-4 w-4" />
-            Sélectionner ({selected.size})
+            Sauvegarder ({selected.size})
           </Button>
+          {sessionStatus !== 'ready' && sessionStatus !== 'in_progress' && sessionStatus !== 'ended' && (
+            <Button
+              size="sm"
+              onClick={() => setConfirmDialogOpen(true)}
+            >
+              <MailCheck className="mr-2 h-4 w-4" />
+              Confirmer &amp; envoyer
+            </Button>
+          )}
         </div>
       </div>
 
@@ -399,16 +443,17 @@ export default function PreselectionRegistrationsPage({
         </CardContent>
       </Card>
 
-      {/* Dialog confirmation sélection */}
+      {/* Dialog sauvegarde sélection (select-players, répétable, sans mails) */}
       <Dialog open={selectDialogOpen} onOpenChange={setSelectDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Confirmer la sélection</DialogTitle>
+            <DialogTitle>Sauvegarder la sélection</DialogTitle>
             <DialogDescription>
-              Vous allez sélectionner{' '}
-              <span className="font-semibold text-foreground">{selected.size} joueur(s)</span>.
-              Les anciens sélectionnés seront marqués comme refusés. Cette action
-              est réversible en relançant une sélection.
+              Vous allez marquer{' '}
+              <span className="font-semibold text-foreground">{selected.size} joueur(s)</span>{' '}
+              comme sélectionnés. Les autres seront marqués comme refusés.{' '}
+              <span className="font-medium text-foreground">Aucun mail ne sera envoyé.</span>{' '}
+              Vous pouvez relancer cette action autant de fois que nécessaire.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -419,11 +464,43 @@ export default function PreselectionRegistrationsPage({
             >
               Annuler
             </Button>
-            <Button onClick={handleSelectPlayers} disabled={selectLoading}>
+            <Button variant="outline" onClick={handleSelectPlayers} disabled={selectLoading}>
               {selectLoading && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
-              Confirmer la sélection
+              Sauvegarder
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog confirmation finale (confirm-selection, envoie les mails → Ready) */}
+      <Dialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirmer la sélection définitive</DialogTitle>
+            <DialogDescription>
+              Cette action va{' '}
+              <span className="font-semibold text-foreground">envoyer les invitations par mail</span>{' '}
+              aux joueurs sélectionnés et passer la session en statut{' '}
+              <span className="font-semibold text-foreground">Prêt</span>.
+              Assurez-vous d&apos;avoir finalisé votre sélection avant de continuer.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmDialogOpen(false)}
+              disabled={confirmLoading}
+            >
+              Annuler
+            </Button>
+            <Button onClick={handleConfirmSelection} disabled={confirmLoading}>
+              {confirmLoading && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              <MailCheck className="mr-2 h-4 w-4" />
+              Confirmer &amp; envoyer les mails
             </Button>
           </DialogFooter>
         </DialogContent>

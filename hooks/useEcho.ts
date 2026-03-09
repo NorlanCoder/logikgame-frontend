@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { getEcho, disconnectEcho } from '@/lib/echo';
 import type Echo from 'laravel-echo';
 import type { BroadcastDriver } from 'laravel-echo';
@@ -12,22 +12,17 @@ type EchoInstance = Echo<BroadcastDriver>;
  * Gère la connexion/déconnexion automatiquement.
  */
 export function useEcho(): EchoInstance | null {
-  const echoRef = useRef<EchoInstance | null>(null);
+  const [echo, setEcho] = useState<EchoInstance | null>(null);
 
   useEffect(() => {
     try {
-      echoRef.current = getEcho();
+      setEcho(getEcho());
     } catch {
       // côté serveur – ignorer
     }
-
-    return () => {
-      // Ne pas déconnecter au unmount individuel
-      // La déconnexion se fait via disconnectEcho() explicitement
-    };
   }, []);
 
-  return echoRef.current;
+  return echo;
 }
 
 export { disconnectEcho };

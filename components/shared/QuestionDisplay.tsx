@@ -45,7 +45,7 @@ export function QuestionDisplay({
       {/* Texte de la question */}
       <h2
         className={clsx(
-          'text-center text-xl font-semibold leading-relaxed text-gray-900 dark:text-white',
+          'text-center text-xl font-semibold leading-relaxed text-white',
           'md:text-2xl'
         )}
       >
