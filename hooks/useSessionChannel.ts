@@ -15,6 +15,7 @@ import type {
   WsGameEnded,
   WsSecondChanceLaunched,
   WsSecondChanceRevealed,
+  WsFinaleChoicesRevealed,
 } from '@/lib/types';
 import { useTimer } from '@/hooks/useTimer';
 
@@ -140,6 +141,9 @@ export function useSessionChannel(sessionId: number | null) {
       .listen('.game.ended', (e: WsGameEnded) => {
         stopCountdown();
         useGameStore.getState().setGameEnded(e.final_jackpot, e.winners);
+      })
+      .listen('.finale.choices.revealed', (e: WsFinaleChoicesRevealed) => {
+        useGameStore.setState({ finaleChoices: e.choices, finaleScenario: e.scenario });
       })
       .listen('.second_chance.launched', (e: WsSecondChanceLaunched) => {
         useGameStore.getState().setSecondChanceQuestion(

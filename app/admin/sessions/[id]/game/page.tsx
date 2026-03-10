@@ -76,6 +76,7 @@ interface DashboardData {
   players_eliminated: number;
   current_round: SessionRound | null;
   current_question: Question | null;
+  active_players_list?: { id: number; pseudo: string }[];
 }
 
 type QuestionFlowStep = 'ready' | 'launched' | 'closed' | 'revealed';
@@ -168,6 +169,11 @@ export default function AdminGameMonitorPage({
     { pseudo: string; correct_answers_count: number; total_response_time_ms: number; rank: number; is_qualified: boolean }[]
   >([]);
 
+  // Duels (manches 6/7)
+  const [duelTurnConfigured, setDuelTurnConfigured] = useState(false);
+  const [duelNextPlayer, setDuelNextPlayer] = useState<{ id: number; pseudo: string } | null>(null);
+  const [activePlayers, setActivePlayers] = useState<{ id: number; pseudo: string }[]>([]);
+
   // ─── Fetch initial ──────────────────────────────────────────
 
   const fetchAll = useCallback(async () => {
@@ -191,9 +197,13 @@ export default function AdminGameMonitorPage({
         (roundsRes.data as unknown as SessionRound[]);
       setRounds(r);
 
-      const rawDash = dashRes.data as unknown as { data?: DashboardData };
+      const rawDash = dashRes.data as unknown as { data?: DashboardData; stats?: { active_players_list?: { id: number; pseudo: string }[] } };
       const d: DashboardData = (rawDash.data ?? dashRes.data) as DashboardData;
       setDashboard(d);
+
+      // Extraire la liste des joueurs actifs (pour les duels)
+      const playersList = rawDash.stats?.active_players_list ?? d.active_players_list ?? [];
+      setActivePlayers(playersList);
 
       // Déterminer la manche courante ouverte
       if (d.current_round) {
@@ -428,7 +438,12 @@ export default function AdminGameMonitorPage({
 
   // Actions spécifiques
   function launchQuestion(questionId: number) {
-    gameAction('launch-question', { question_id: questionId });
+    const isDuel = dashboard?.current_round?.round_type === 'duel_jackpot' || dashboard?.current_round?.round_type === 'duel_elimination';
+    const body: Record<string, unknown> = { question_id: questionId };
+    if (isDuel && duelNextPlayer) {
+      body.assigned_player_id = duelNextPlayer.id;
+    }
+    gameAction('launch-question', body);
   }
 
   function closeQuestion() {
@@ -502,6 +517,46 @@ export default function AdminGameMonitorPage({
       'Calculer les gains et terminer la finale ?',
       () => gameAction('resolve-finale')
     );
+  }
+
+  // Duels
+  async function setupDuelTurnOrder() {
+    if (activePlayers.length < 2) {
+      toast.error('Il faut au moins 2 joueurs actifs pour configurer les duels.');
+      return;
+    }
+    setActionLoading('setup-turn-order');
+    try {
+      await api.post(`/admin/sessions/${sessionId}/game/setup-turn-order`, {
+        player_order: activePlayers.map((p) => p.id),
+      });
+      setDuelTurnConfigured(true);
+      toast.success('Ordre de passage configuré.');
+      await fetchDuelNextTurn();
+    } catch (err: unknown) {
+      const apiErr = (err as { response?: { data?: { message?: string } } }).response?.data;
+      toast.error(apiErr?.message ?? 'Erreur: setup-turn-order');
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function fetchDuelNextTurn() {
+    try {
+      const res = await api.get<{ next_player_id?: number; finished?: boolean; active_players_count?: number }>(
+        `/admin/sessions/${sessionId}/game/next-turn`
+      );
+      if (res.data.finished) {
+        setDuelNextPlayer(null);
+        toast.info('Plus de joueurs actifs dans le duel.');
+      } else if (res.data.next_player_id) {
+        const player = activePlayers.find((p) => p.id === res.data.next_player_id);
+        setDuelNextPlayer(player ?? { id: res.data.next_player_id, pseudo: `Joueur #${res.data.next_player_id}` });
+      }
+    } catch (err: unknown) {
+      const apiErr = (err as { response?: { data?: { message?: string } } }).response?.data;
+      toast.error(apiErr?.message ?? 'Erreur: next-turn');
+    }
   }
 
   // ─── Render ─────────────────────────────────────────────────
@@ -871,6 +926,10 @@ export default function AdminGameMonitorPage({
                       onRevealFinaleChoices={revealFinaleChoices}
                       onResolveFinale={resolveFinale}
                       top4Rankings={top4Rankings}
+                      onSetupTurnOrder={setupDuelTurnOrder}
+                      onFetchNextTurn={fetchDuelNextTurn}
+                      duelTurnConfigured={duelTurnConfigured}
+                      duelNextPlayer={duelNextPlayer}
                     />
                   )}
 
@@ -1264,6 +1323,10 @@ function SpecialRoundActions({
   onRevealFinaleChoices,
   onResolveFinale,
   top4Rankings,
+  onSetupTurnOrder,
+  onFetchNextTurn,
+  duelTurnConfigured,
+  duelNextPlayer,
 }: {
   roundType: string;
   actionLoading: string | null;
@@ -1271,11 +1334,17 @@ function SpecialRoundActions({
   onRevealFinaleChoices: () => void;
   onResolveFinale: () => void;
   top4Rankings: { pseudo: string; correct_answers_count: number; total_response_time_ms: number; rank: number; is_qualified: boolean }[];
+  onSetupTurnOrder: () => void;
+  onFetchNextTurn: () => void;
+  duelTurnConfigured: boolean;
+  duelNextPlayer: { id: number; pseudo: string } | null;
 }) {
   // Afficher les actions spéciales uniquement pour les manches concernées
   if (
     roundType !== 'top4_elimination' &&
-    roundType !== 'finale'
+    roundType !== 'finale' &&
+    roundType !== 'duel_jackpot' &&
+    roundType !== 'duel_elimination'
   ) {
     return null;
   }
@@ -1335,6 +1404,54 @@ function SpecialRoundActions({
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Duels (manches 6/7) */}
+        {(roundType === 'duel_jackpot' || roundType === 'duel_elimination') && (
+          <div className="flex w-full flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              {!duelTurnConfigured && (
+                <Button
+                  size="sm"
+                  onClick={onSetupTurnOrder}
+                  disabled={!!actionLoading}
+                  className="gap-1 bg-amber-600 hover:bg-amber-700"
+                >
+                  {actionLoading === 'setup-turn-order' ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Swords className="h-3.5 w-3.5" />
+                  )}
+                  Configurer ordre de passage
+                </Button>
+              )}
+              {duelTurnConfigured && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={onFetchNextTurn}
+                  disabled={!!actionLoading}
+                  className="gap-1"
+                >
+                  <Users className="h-3.5 w-3.5" />
+                  Rafraîchir tour
+                </Button>
+              )}
+            </div>
+            {duelNextPlayer && (
+              <div className="flex items-center gap-2 rounded-lg border border-amber-600/30 bg-amber-600/10 px-4 py-2">
+                <Swords className="h-4 w-4 text-amber-400" />
+                <span className="text-sm font-medium text-amber-300">
+                  Prochain joueur : <span className="font-bold">{duelNextPlayer.pseudo}</span>
+                </span>
+              </div>
+            )}
+            {duelTurnConfigured && !duelNextPlayer && (
+              <div className="rounded-lg border border-green-600/30 bg-green-600/10 px-4 py-2 text-sm text-green-300">
+                Tous les joueurs ont joué.
+              </div>
+            )}
           </div>
         )}
 

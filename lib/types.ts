@@ -336,6 +336,7 @@ export interface WsAnswerResult {
   question_id: number;
   is_correct: boolean;
   correct_answer: string;
+  personal_jackpot?: number;
 }
 
 export interface WsAnswerRevealed {
@@ -406,6 +407,11 @@ export interface WsHintApplied {
 export interface WsGameEnded {
   final_jackpot: number;
   winners: { pseudo: string; final_gain: number }[];
+}
+
+export interface WsFinaleChoicesRevealed {
+  choices: { session_player_id: number; choice: string; pseudo: string }[];
+  scenario: 'both_continue' | 'one_abandons' | 'both_abandon';
 }
 
 export interface WsTop4Finalized {

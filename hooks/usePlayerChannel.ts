@@ -25,6 +25,10 @@ export function usePlayerChannel(sessionPlayerId: number | null) {
       .listen('.answer.result', (e: WsAnswerResult) => {
         const state = useGameStore.getState();
         if (state.phase === 'round_skipped') return;
+        // Mettre à jour la cagnotte personnelle si fournie (manches duel)
+        if (e.personal_jackpot != null) {
+          useGameStore.setState({ personalJackpot: e.personal_jackpot });
+        }
         const scPhases = ['second_chance', 'sc_answered', 'second_chance_danger'];
         if (scPhases.includes(state.phase)) {
           state.setScResult(e.is_correct, e.correct_answer);

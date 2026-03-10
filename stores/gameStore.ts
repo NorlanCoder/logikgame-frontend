@@ -73,6 +73,10 @@ interface GameState {
   winners: WsGameEnded['winners'] | null;
   finalJackpot: number | null;
 
+  // Finale (Manche 8)
+  finaleChoices: { session_player_id: number; choice: string; pseudo: string }[] | null;
+  finaleScenario: string | null;
+
   // Seconde chance (Manche 3)
   secondChanceQuestion: WsSecondChanceLaunched['question'] | null;
   mainQuestionId: number | null;
@@ -137,6 +141,9 @@ export const useGameStore = create<GameState>((set) => ({
   winners: null,
   finalJackpot: null,
 
+  finaleChoices: null,
+  finaleScenario: null,
+
   secondChanceQuestion: null,
   mainQuestionId: null,
   inDangerCount: 0,
@@ -149,10 +156,15 @@ export const useGameStore = create<GameState>((set) => ({
   setRound: (round) => {
     const state = useGameStore.getState();
     if (state.phase === 'eliminated' || state.phase === 'game_ended') return;
+    // En finale, les finalistes doivent voir le choix Continuer/Abandonner
+    const nextPhase =
+      round.round_type === 'finale' && state.playerStatus === 'finalist'
+        ? 'finale_choice'
+        : 'round_intro';
     // round_skipped se réinitialise quand une nouvelle manche commence
     set({
       currentRound: round,
-      phase: 'round_intro',
+      phase: nextPhase,
       currentQuestion: null,
       selectedChoiceId: null,
       answerValue: '',
@@ -349,6 +361,8 @@ export const useGameStore = create<GameState>((set) => ({
       eliminatedPlayers: [],
       winners: null,
       finalJackpot: null,
+      finaleChoices: null,
+      finaleScenario: null,
       secondChanceQuestion: null,
       mainQuestionId: null,
     }),
