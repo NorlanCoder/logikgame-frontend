@@ -20,6 +20,7 @@ import type {
   WsSecondChanceLaunched,
   WsSecondChanceRevealed,
   WsSecondChanceClosed,
+  WsTop4Finalized,
 } from '@/lib/types';
 
 // ─── Types locaux pour la projection ─────────────────────────
@@ -52,7 +53,8 @@ interface ProjectionState {
   questionStats: { answers_received: number; correct_count: number; eliminated_count: number; in_danger_count: number; in_danger_players: string[] } | null;
   playerResults: { pseudo: string; is_correct: boolean; is_timeout: boolean }[];
   scPlayerResults: { pseudo: string; is_correct: boolean; is_timeout: boolean }[];
-  phase: 'waiting' | 'round_intro' | 'question' | 'question_closed' | 'answer_revealed' | 'eliminated' | 'game_ended' | 'sc_question' | 'sc_closed' | 'sc_revealed';
+  phase: 'waiting' | 'round_intro' | 'question' | 'question_closed' | 'answer_revealed' | 'eliminated' | 'game_ended' | 'sc_question' | 'sc_closed' | 'sc_revealed' | 'top4_finalized';
+  top4Rankings: { pseudo: string; correct_answers_count: number; total_response_time_ms: number; rank: number; is_qualified: boolean }[];
   winners: { pseudo: string; final_gain: number }[];
   scQuestion: {
     id: number;
@@ -86,6 +88,7 @@ const initialState: ProjectionState = {
   scQuestion: null,
   scCorrectAnswer: null,
   scRevealedChoices: null,
+  top4Rankings: [],
 };
 
 export default function ProjectionPage({
@@ -347,6 +350,13 @@ export default function ProjectionPage({
           scRevealedChoices: e.choices ?? null,
           phase: 'sc_revealed',
         }));
+      })
+      .listen('.top4.finalized', (e: WsTop4Finalized) => {
+        setState((prev) => ({
+          ...prev,
+          top4Rankings: e.rankings,
+          phase: 'top4_finalized',
+        }));
       });
 
     return () => {
@@ -417,6 +427,7 @@ export default function ProjectionPage({
         )}
         {state.phase === 'sc_closed' && <ScClosedView state={state} />}
         {state.phase === 'sc_revealed' && <ScRevealedView state={state} />}
+        {state.phase === 'top4_finalized' && <Top4FinalizedView state={state} />}
       </main>
 
       {/* Éliminés */}
@@ -809,6 +820,70 @@ function ScRevealedView({ state }: { state: ProjectionState }) {
                 {choice.label}
               </div>
             ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Top4FinalizedView({ state }: { state: ProjectionState }) {
+  const rankings = state.top4Rankings;
+  const qualified = rankings.filter((r) => r.is_qualified);
+  const eliminated = rankings.filter((r) => !r.is_qualified);
+
+  return (
+    <div className="flex w-full max-w-5xl flex-col items-center gap-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <div className="rounded-full bg-pink-600/20 px-6 py-2">
+        <span className="text-lg font-semibold text-pink-400">Classement — Top 4</span>
+      </div>
+      <h2 className="text-4xl font-extrabold">Les finalistes</h2>
+
+      {/* Qualifiés */}
+      <div className="w-full space-y-3">
+        {qualified.map((r) => (
+          <div
+            key={r.rank}
+            className="flex items-center justify-between rounded-xl border border-green-700/50 bg-green-900/10 px-6 py-4"
+          >
+            <div className="flex items-center gap-4">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-green-600 text-xl font-bold">
+                {r.rank}
+              </span>
+              <span className="text-2xl font-bold text-green-300">{r.pseudo}</span>
+            </div>
+            <div className="flex items-center gap-6 text-lg text-gray-400">
+              <span>
+                <span className="font-semibold text-green-400">{r.correct_answers_count}</span> bonne{r.correct_answers_count > 1 ? 's' : ''} réponse{r.correct_answers_count > 1 ? 's' : ''}
+              </span>
+              <span>
+                {(r.total_response_time_ms / 1000).toFixed(1)}s
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Éliminés */}
+      {eliminated.length > 0 && (
+        <div className="w-full space-y-2">
+          <p className="text-center text-sm font-medium text-red-400">Éliminés</p>
+          {eliminated.map((r) => (
+            <div
+              key={r.rank}
+              className="flex items-center justify-between rounded-xl border border-red-700/30 bg-red-900/10 px-6 py-3 opacity-70"
+            >
+              <div className="flex items-center gap-4">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-red-900/50 text-sm font-bold text-red-400">
+                  {r.rank}
+                </span>
+                <span className="text-lg font-medium text-red-300">{r.pseudo}</span>
+              </div>
+              <div className="flex items-center gap-6 text-sm text-gray-500">
+                <span>{r.correct_answers_count} bonne{r.correct_answers_count > 1 ? 's' : ''} réponse{r.correct_answers_count > 1 ? 's' : ''}</span>
+                <span>{(r.total_response_time_ms / 1000).toFixed(1)}s</span>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>

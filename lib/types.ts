@@ -408,6 +408,17 @@ export interface WsGameEnded {
   winners: { pseudo: string; final_gain: number }[];
 }
 
+export interface WsTop4Finalized {
+  rankings: {
+    session_player_id: number;
+    pseudo: string;
+    correct_answers_count: number;
+    total_response_time_ms: number;
+    rank: number;
+    is_qualified: boolean;
+  }[];
+}
+
 export interface WsSecondChanceLaunched {
   main_question_id: number;
   failed_player_ids: number[];

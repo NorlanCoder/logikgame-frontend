@@ -163,6 +163,11 @@ export default function AdminGameMonitorPage({
     { pseudo: string; reason: string }[]
   >([]);
 
+  // Classement Top 4
+  const [top4Rankings, setTop4Rankings] = useState<
+    { pseudo: string; correct_answers_count: number; total_response_time_ms: number; rank: number; is_qualified: boolean }[]
+  >([]);
+
   // ─── Fetch initial ──────────────────────────────────────────
 
   const fetchAll = useCallback(async () => {
@@ -470,7 +475,20 @@ export default function AdminGameMonitorPage({
     confirmGameAction(
       'Finaliser le Top 4',
       'Seuls les 4 meilleurs joueurs seront conservés. Continuer ?',
-      () => gameAction('finalize-top4')
+      async () => {
+        setActionLoading('finalize-top4');
+        try {
+          const res = await api.post<{ rankings: { pseudo: string; correct_answers_count: number; total_response_time_ms: number; rank: number; is_qualified: boolean }[] }>(
+            `/admin/sessions/${sessionId}/game/finalize-top4`
+          );
+          setTop4Rankings(res.data.rankings ?? []);
+        } catch (err: unknown) {
+          const apiErr = (err as { response?: { data?: { message?: string } } }).response?.data;
+          toast.error(apiErr?.message ?? 'Erreur: finalize-top4');
+        } finally {
+          setActionLoading(null);
+        }
+      }
     );
   }
 
@@ -852,6 +870,7 @@ export default function AdminGameMonitorPage({
                       onFinalizeTop4={finalizeTop4}
                       onRevealFinaleChoices={revealFinaleChoices}
                       onResolveFinale={resolveFinale}
+                      top4Rankings={top4Rankings}
                     />
                   )}
 
@@ -1244,12 +1263,14 @@ function SpecialRoundActions({
   onFinalizeTop4,
   onRevealFinaleChoices,
   onResolveFinale,
+  top4Rankings,
 }: {
   roundType: string;
   actionLoading: string | null;
   onFinalizeTop4: () => void;
   onRevealFinaleChoices: () => void;
   onResolveFinale: () => void;
+  top4Rankings: { pseudo: string; correct_answers_count: number; total_response_time_ms: number; rank: number; is_qualified: boolean }[];
 }) {
   // Afficher les actions spéciales uniquement pour les manches concernées
   if (
@@ -1270,7 +1291,7 @@ function SpecialRoundActions({
           <Button
             size="sm"
             onClick={onFinalizeTop4}
-            disabled={!!actionLoading}
+            disabled={!!actionLoading || top4Rankings.length > 0}
             className="gap-1 bg-pink-600 hover:bg-pink-700"
           >
             {actionLoading === 'finalize-top4' ? (
@@ -1280,6 +1301,41 @@ function SpecialRoundActions({
             )}
             Finaliser Top 4
           </Button>
+        )}
+
+        {/* Classement Top 4 */}
+        {roundType === 'top4_elimination' && top4Rankings.length > 0 && (
+          <div className="mt-3 w-full">
+            <p className="mb-2 text-sm font-semibold text-muted-foreground">Classement</p>
+            <div className="space-y-1.5">
+              {top4Rankings.map((r) => (
+                <div
+                  key={r.rank}
+                  className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${
+                    r.is_qualified
+                      ? 'border border-green-700/50 bg-green-900/10'
+                      : 'border border-red-700/30 bg-red-900/10 opacity-70'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
+                      r.is_qualified ? 'bg-green-600' : 'bg-red-900/50 text-red-400'
+                    }`}>
+                      {r.rank}
+                    </span>
+                    <span className={`font-medium ${r.is_qualified ? 'text-green-300' : 'text-red-300'}`}>
+                      {r.pseudo}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <span>{r.correct_answers_count} bonne{r.correct_answers_count > 1 ? 's' : ''}</span>
+                    <span>{(r.total_response_time_ms / 1000).toFixed(1)}s</span>
+                    {r.is_qualified && <Badge variant="outline" className="border-green-600 text-green-400 text-xs">Qualifié</Badge>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
 
         {/* Finale (manche 8) */}
