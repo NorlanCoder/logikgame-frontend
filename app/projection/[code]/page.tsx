@@ -19,6 +19,7 @@ import type {
   WsGameEnded,
   WsSecondChanceLaunched,
   WsSecondChanceRevealed,
+  WsSecondChanceClosed,
 } from '@/lib/types';
 
 // ─── Types locaux pour la projection ─────────────────────────
@@ -49,6 +50,8 @@ interface ProjectionState {
   revealedChoices: (QuestionChoice & { is_correct: boolean })[] | null;
   eliminatedPlayers: { pseudo: string; reason?: string }[];
   questionStats: { answers_received: number; correct_count: number; eliminated_count: number; in_danger_count: number; in_danger_players: string[] } | null;
+  playerResults: { pseudo: string; is_correct: boolean; is_timeout: boolean }[];
+  scPlayerResults: { pseudo: string; is_correct: boolean; is_timeout: boolean }[];
   phase: 'waiting' | 'round_intro' | 'question' | 'question_closed' | 'answer_revealed' | 'eliminated' | 'game_ended' | 'sc_question' | 'sc_closed' | 'sc_revealed';
   winners: { pseudo: string; final_gain: number }[];
   scQuestion: {
@@ -76,6 +79,8 @@ const initialState: ProjectionState = {
   revealedChoices: null,
   eliminatedPlayers: [],
   questionStats: null,
+  playerResults: [],
+  scPlayerResults: [],
   phase: 'waiting',
   winners: [],
   scQuestion: null,
@@ -207,6 +212,8 @@ export default function ProjectionPage({
           scQuestion: null,
           scCorrectAnswer: null,
           scRevealedChoices: null,
+          playerResults: [],
+          scPlayerResults: [],
           phase: 'round_intro',
         }));
         stopCountdown();
@@ -232,6 +239,8 @@ export default function ProjectionPage({
           scQuestion: null,
           scCorrectAnswer: null,
           scRevealedChoices: null,
+          playerResults: [],
+          scPlayerResults: [],
           phase: 'question',
         }));
         startCountdown(e.question.duration);
@@ -242,6 +251,7 @@ export default function ProjectionPage({
         setState((prev) => ({
           ...prev,
           phase: 'question_closed',
+          playerResults: e.player_results ?? [],
           questionStats: {
             answers_received: e.answers_received,
             correct_count: e.correct_count,
@@ -321,11 +331,12 @@ export default function ProjectionPage({
         }));
         startCountdown(e.question.duration);
       })
-      .listen('.second_chance.closed', () => {
+      .listen('.second_chance.closed', (e: WsSecondChanceClosed) => {
         stopCountdown();
         setTimerSeconds(0);
         setState((prev) => ({
           ...prev,
+          scPlayerResults: e.player_results ?? [],
           phase: 'sc_closed',
         }));
       })
@@ -512,6 +523,10 @@ function QuestionView({
 function QuestionClosedView({ state }: { state: ProjectionState }) {
   const q = state.currentQuestion;
   const stats = state.questionStats;
+  const results = state.playerResults;
+  const correctPlayers = results.filter((r) => r.is_correct);
+  const wrongPlayers = results.filter((r) => !r.is_correct);
+
   return (
     <div className="flex flex-col items-center gap-8 text-center">
       {q && <h2 className="text-3xl font-bold">{q.text}</h2>}
@@ -554,6 +569,44 @@ function QuestionClosedView({ state }: { state: ProjectionState }) {
           </>
         )}
       </div>
+
+      {/* Résultats par joueur */}
+      {results.length > 0 && (
+        <div className="flex w-full max-w-4xl gap-6">
+          {/* Bonnes réponses */}
+          {correctPlayers.length > 0 && (
+            <div className="flex-1 rounded-xl border border-green-700/50 bg-green-900/10 p-4">
+              <div className="mb-3 flex items-center justify-center gap-2 text-green-400">
+                <CheckCircle2 className="h-5 w-5" />
+                <span className="font-semibold">Bonne réponse ({correctPlayers.length})</span>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2">
+                {correctPlayers.map((r, i) => (
+                  <span key={i} className="rounded-full bg-green-900/40 px-3 py-1 text-sm font-medium text-green-300">
+                    {r.pseudo}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* Mauvaises réponses */}
+          {wrongPlayers.length > 0 && (
+            <div className="flex-1 rounded-xl border border-red-700/50 bg-red-900/10 p-4">
+              <div className="mb-3 flex items-center justify-center gap-2 text-red-400">
+                <XCircle className="h-5 w-5" />
+                <span className="font-semibold">Mauvaise réponse ({wrongPlayers.length})</span>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2">
+                {wrongPlayers.map((r, i) => (
+                  <span key={i} className="rounded-full bg-red-900/40 px-3 py-1 text-sm font-medium text-red-300">
+                    {r.pseudo} {r.is_timeout ? '(timeout)' : ''}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -659,6 +712,10 @@ function ScQuestionView({
 
 function ScClosedView({ state }: { state: ProjectionState }) {
   const q = state.scQuestion;
+  const results = state.scPlayerResults;
+  const correctPlayers = results.filter((r) => r.is_correct);
+  const wrongPlayers = results.filter((r) => !r.is_correct);
+
   return (
     <div className="flex flex-col items-center gap-8 text-center">
       <div className="flex items-center gap-2 rounded-full bg-purple-600/20 px-6 py-2">
@@ -671,6 +728,42 @@ function ScClosedView({ state }: { state: ProjectionState }) {
         <p className="text-2xl font-bold">Seconde chance terminée</p>
         <p className="mt-2 text-lg text-gray-400">En attente de la révélation…</p>
       </div>
+
+      {/* Résultats SC par joueur */}
+      {results.length > 0 && (
+        <div className="flex w-full max-w-4xl gap-6">
+          {correctPlayers.length > 0 && (
+            <div className="flex-1 rounded-xl border border-green-700/50 bg-green-900/10 p-4">
+              <div className="mb-3 flex items-center justify-center gap-2 text-green-400">
+                <CheckCircle2 className="h-5 w-5" />
+                <span className="font-semibold">Sauvé ({correctPlayers.length})</span>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2">
+                {correctPlayers.map((r, i) => (
+                  <span key={i} className="rounded-full bg-green-900/40 px-3 py-1 text-sm font-medium text-green-300">
+                    {r.pseudo}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {wrongPlayers.length > 0 && (
+            <div className="flex-1 rounded-xl border border-red-700/50 bg-red-900/10 p-4">
+              <div className="mb-3 flex items-center justify-center gap-2 text-red-400">
+                <XCircle className="h-5 w-5" />
+                <span className="font-semibold">Éliminé ({wrongPlayers.length})</span>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2">
+                {wrongPlayers.map((r, i) => (
+                  <span key={i} className="rounded-full bg-red-900/40 px-3 py-1 text-sm font-medium text-red-300">
+                    {r.pseudo} {r.is_timeout ? '(timeout)' : ''}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
