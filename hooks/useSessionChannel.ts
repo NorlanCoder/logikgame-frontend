@@ -5,6 +5,7 @@ import { useEcho } from '@/hooks/useEcho';
 import { useGameStore } from '@/stores/gameStore';
 import type {
   WsQuestionLaunched,
+  WsQuestionClosed,
   WsAnswerRevealed,
   WsPlayerEliminated,
   WsJackpotUpdated,
@@ -13,6 +14,7 @@ import type {
   WsTimerTick,
   WsGameEnded,
   WsSecondChanceLaunched,
+  WsSecondChanceRevealed,
 } from '@/lib/types';
 import { useTimer } from '@/hooks/useTimer';
 
@@ -42,25 +44,48 @@ export function useSessionChannel(sessionId: number | null) {
         });
       })
       .listen('.question.launched', (e: WsQuestionLaunched) => {
-        useGameStore.getState().setQuestion(e.question);
+        const state = useGameStore.getState();
+        if (state.phase === 'round_skipped') return;
+        state.setQuestion(e.question);
         startCountdown(e.question.duration);
       })
-      .listen('.question.closed', () => {
+      .listen('.question.closed', (e: WsQuestionClosed) => {
+        const state = useGameStore.getState();
+        if (state.phase === 'round_skipped') return;
         stopCountdown();
+        useGameStore.setState({ inDangerCount: e.in_danger_count ?? 0 });
       })
       .listen('.answer.revealed', (e: WsAnswerRevealed) => {
         const state = useGameStore.getState();
-        if (e.choices) {
-          state.setRevealedChoices(e.choices);
-        }
-        // Si le joueur n'a pas encore reçu son résultat perso, on met le correctAnswer
+        if (state.phase === 'eliminated' || state.phase === 'game_ended' || state.phase === 'round_skipped') return;
+        // Toujours marquer le reveal (même sans choices pour les questions texte/nombre)
+        state.setRevealedChoices(e.choices ?? []);
         if (state.correctAnswer === null) {
           useGameStore.setState({ correctAnswer: e.correct_answer });
         }
+        // En manche 3 (seconde chance), afficher l'état danger/safe dès le reveal
+        // Fonctionne que le joueur soit en phase 'result' ou 'answered'
+        // NB: si isCorrect est null (AnswerResult pas encore reçu), on ne transitionne pas
+        // → c'est setResult qui gérera la transition quand il arrivera
+        if (
+          state.currentRound?.round_type === 'second_chance' &&
+          state.inDangerCount > 0 &&
+          (state.phase === 'result' || state.phase === 'answered') &&
+          state.isCorrect !== null
+        ) {
+          useGameStore.setState({
+            phase: state.isCorrect === false ? 'second_chance_danger' : 'second_chance_safe',
+          });
+        }
       })
       .listen('.player.eliminated', (e: WsPlayerEliminated) => {
-        useGameStore.getState().setEliminated(e.eliminated);
-        useGameStore.getState().updateJackpot(e.jackpot, e.players_remaining);
+        const state = useGameStore.getState();
+        state.setEliminated(e.eliminated);
+        state.updateJackpot(e.jackpot, e.players_remaining);
+        // Si le joueur courant est dans les éliminés, mettre à jour sa phase
+        if (state.sessionPlayerId && e.eliminated_player_ids?.includes(state.sessionPlayerId)) {
+          state.setPlayerStatus('eliminated');
+        }
       })
       .listen('.jackpot.updated', (e: WsJackpotUpdated) => {
         useGameStore.getState().updateJackpot(e.jackpot, e.players_remaining);
@@ -90,6 +115,11 @@ export function useSessionChannel(sessionId: number | null) {
         if (useGameStore.getState().phase === 'second_chance') {
           startCountdown(e.question.duration);
         }
+      })
+      .listen('.second_chance.revealed', (e: WsSecondChanceRevealed) => {
+        const state = useGameStore.getState();
+        if (state.phase === 'eliminated' || state.phase === 'game_ended') return;
+        state.setScRevealedChoices(e.choices ?? [], e.correct_answer);
       });
 
     return () => {

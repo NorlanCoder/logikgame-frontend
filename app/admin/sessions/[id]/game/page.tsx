@@ -98,7 +98,7 @@ export default function AdminGameMonitorPage({
   // Question en cours côté serveur
   const [activeQuestionId, setActiveQuestionId] = useState<number | null>(null);
   const [questionStep, setQuestionStep] = useState<QuestionFlowStep>('ready');
-  const [secondChanceClosed, setSecondChanceClosed] = useState(false);
+  const [scStatusByQuestionId, setScStatusByQuestionId] = useState<Record<number, 'pending' | 'launched' | 'closed' | 'revealed'>>({}); 
   const [timerSeconds, setTimerSeconds] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -284,7 +284,13 @@ export default function AdminGameMonitorPage({
         setQuestionStep('closed');
         stopLocalTimer();
         setActiveQuestionId((prevId) => {
-          if (prevId) updateQuestionStatus(prevId, 'closed');
+          if (prevId) {
+            updateQuestionStatus(prevId, 'closed');
+            // Si aucun joueur en danger, pas besoin de SC → marquer comme closed
+            if (e.in_danger_count === 0) {
+              setScStatusByQuestionId((prev) => ({ ...prev, [prevId]: 'closed' }));
+            }
+          }
           return prevId;
         });
         setDashboard((prev) =>
@@ -417,7 +423,6 @@ export default function AdminGameMonitorPage({
 
   // Actions spécifiques
   function launchQuestion(questionId: number) {
-    setSecondChanceClosed(false);
     gameAction('launch-question', { question_id: questionId });
   }
 
@@ -446,13 +451,19 @@ export default function AdminGameMonitorPage({
   }
 
   // Actions spéciales par type de manche
-  function launchSecondChance() {
-    gameAction('launch-second-chance');
+  async function launchSecondChanceForQuestion(questionId: number) {
+    const ok = await gameAction('launch-second-chance');
+    if (ok) setScStatusByQuestionId((prev) => ({ ...prev, [questionId]: 'launched' }));
   }
 
-  async function closeSecondChance() {
+  async function closeSecondChanceForQuestion(questionId: number) {
     const ok = await gameAction('close-second-chance');
-    if (ok) setSecondChanceClosed(true);
+    if (ok) setScStatusByQuestionId((prev) => ({ ...prev, [questionId]: 'closed' }));
+  }
+
+  async function revealSecondChanceForQuestion(questionId: number) {
+    const ok = await gameAction('reveal-second-chance');
+    if (ok) setScStatusByQuestionId((prev) => ({ ...prev, [questionId]: 'revealed' }));
   }
 
   function finalizeTop4() {
@@ -802,9 +813,31 @@ export default function AdminGameMonitorPage({
                               activeQuestionId === q.id &&
                               questionStep === 'closed'
                             }
+                            canLaunchSC={
+                              round.round_type === 'second_chance' &&
+                              isCurrent &&
+                              round.status === 'in_progress' &&
+                              q.status === 'revealed' &&
+                              (scStatusByQuestionId[q.id] ?? q.second_chance_question?.status ?? 'pending') === 'pending'
+                            }
+                            canCloseSC={
+                              round.round_type === 'second_chance' &&
+                              isCurrent &&
+                              round.status === 'in_progress' &&
+                              (scStatusByQuestionId[q.id] ?? q.second_chance_question?.status ?? 'pending') === 'launched'
+                            }
+                            canRevealSC={
+                              round.round_type === 'second_chance' &&
+                              isCurrent &&
+                              round.status === 'in_progress' &&
+                              (scStatusByQuestionId[q.id] ?? q.second_chance_question?.status ?? 'pending') === 'closed'
+                            }
                             onLaunch={() => launchQuestion(q.id)}
                             onClose={closeQuestion}
                             onReveal={revealAnswer}
+                            onLaunchSC={() => launchSecondChanceForQuestion(q.id)}
+                            onCloseSC={() => closeSecondChanceForQuestion(q.id)}
+                            onRevealSC={() => revealSecondChanceForQuestion(q.id)}
                             actionLoading={actionLoading}
                           />
                         ))}
@@ -815,16 +848,41 @@ export default function AdminGameMonitorPage({
                   {isCurrent && round.status === 'in_progress' && (
                     <SpecialRoundActions
                       roundType={round.round_type}
-                      questionStep={questionStep}
-                      secondChanceClosed={secondChanceClosed}
                       actionLoading={actionLoading}
-                      onLaunchSecondChance={launchSecondChance}
-                      onCloseSecondChance={closeSecondChance}
                       onFinalizeTop4={finalizeTop4}
                       onRevealFinaleChoices={revealFinaleChoices}
                       onResolveFinale={resolveFinale}
                     />
                   )}
+
+                  {/* Bouton manche suivante quand toutes les questions sont bouclées */}
+                  {isCurrent &&
+                    round.status === 'in_progress' &&
+                    questions.length > 0 &&
+                    questions.every((q) => {
+                      if (q.status !== 'revealed') return false;
+                      if (round.round_type === 'second_chance' && q.second_chance_question) {
+                        const scStatus = scStatusByQuestionId[q.id] ?? q.second_chance_question.status;
+                        return scStatus === 'revealed' || scStatus === 'closed';
+                      }
+                      return true;
+                    }) && (
+                      <div className="mt-4 flex justify-end border-t pt-4">
+                        <Button
+                          size="sm"
+                          onClick={nextRound}
+                          disabled={!!actionLoading}
+                          className="gap-1"
+                        >
+                          {actionLoading === 'next-round' ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <SkipForward className="h-3.5 w-3.5" />
+                          )}
+                          Manche suivante
+                        </Button>
+                      </div>
+                    )}
                 </CardContent>
               )}
             </Card>
@@ -909,9 +967,15 @@ function QuestionRow({
   canLaunch,
   canClose,
   canReveal,
+  canLaunchSC,
+  canCloseSC,
+  canRevealSC,
   onLaunch,
   onClose,
   onReveal,
+  onLaunchSC,
+  onCloseSC,
+  onRevealSC,
   actionLoading,
 }: {
   question: Question;
@@ -920,9 +984,15 @@ function QuestionRow({
   canLaunch: boolean;
   canClose: boolean;
   canReveal: boolean;
+  canLaunchSC: boolean;
+  canCloseSC: boolean;
+  canRevealSC: boolean;
   onLaunch: () => void;
   onClose: () => void;
   onReveal: () => void;
+  onLaunchSC: () => void;
+  onCloseSC: () => void;
+  onRevealSC: () => void;
   actionLoading: string | null;
 }) {
   const isDone =
@@ -1025,6 +1095,55 @@ function QuestionRow({
           </Button>
         )}
 
+        {/* Boutons seconde chance (manche 3) */}
+        {canLaunchSC && (
+          <Button
+            size="sm"
+            onClick={onLaunchSC}
+            disabled={!!actionLoading}
+            className="gap-1 bg-purple-600 hover:bg-purple-700"
+          >
+            {actionLoading === 'launch-second-chance' ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Play className="h-3.5 w-3.5" />
+            )}
+            Lancer seconde chance
+          </Button>
+        )}
+        {canCloseSC && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onCloseSC}
+            disabled={!!actionLoading}
+            className="gap-1 border-purple-500/50 text-purple-500 hover:bg-purple-500/10"
+          >
+            {actionLoading === 'close-second-chance' ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Square className="h-3.5 w-3.5" />
+            )}
+            Clôturer seconde chance
+          </Button>
+        )}
+        {canRevealSC && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onRevealSC}
+            disabled={!!actionLoading}
+            className="gap-1 border-purple-500/50 text-purple-500 hover:bg-purple-500/10"
+          >
+            {actionLoading === 'reveal-second-chance' ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Eye className="h-3.5 w-3.5" />
+            )}
+            Révéler SC
+          </Button>
+        )}
+
         {/* Badge statut si pas d'action */}
         {!canLaunch && !canClose && !canReveal && (
           <Badge
@@ -1121,28 +1240,19 @@ function RoundStatusBadge({ status }: { status: string }) {
 
 function SpecialRoundActions({
   roundType,
-  questionStep,
-  secondChanceClosed,
   actionLoading,
-  onLaunchSecondChance,
-  onCloseSecondChance,
   onFinalizeTop4,
   onRevealFinaleChoices,
   onResolveFinale,
 }: {
   roundType: string;
-  questionStep: QuestionFlowStep;
-  secondChanceClosed: boolean;
   actionLoading: string | null;
-  onLaunchSecondChance: () => void;
-  onCloseSecondChance: () => void;
   onFinalizeTop4: () => void;
   onRevealFinaleChoices: () => void;
   onResolveFinale: () => void;
 }) {
-  // Afficher les actions spéciales uniquement après que la question principale est fermée/révélée
+  // Afficher les actions spéciales uniquement pour les manches concernées
   if (
-    roundType !== 'second_chance' &&
     roundType !== 'top4_elimination' &&
     roundType !== 'finale'
   ) {
@@ -1155,39 +1265,6 @@ function SpecialRoundActions({
         Actions spéciales
       </p>
       <div className="flex flex-wrap gap-2">
-        {/* Seconde chance (manche 3) */}
-        {roundType === 'second_chance' && questionStep === 'revealed' && !secondChanceClosed && (
-          <>
-            <Button
-              size="sm"
-              onClick={onLaunchSecondChance}
-              disabled={!!actionLoading}
-              className="gap-1"
-            >
-              {actionLoading === 'launch-second-chance' ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Play className="h-3.5 w-3.5" />
-              )}
-              Lancer seconde chance
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onCloseSecondChance}
-              disabled={!!actionLoading}
-              className="gap-1"
-            >
-              {actionLoading === 'close-second-chance' ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Square className="h-3.5 w-3.5" />
-              )}
-              Clôturer seconde chance
-            </Button>
-          </>
-        )}
-
         {/* Top 4 (manche 5) */}
         {roundType === 'top4_elimination' && (
           <Button

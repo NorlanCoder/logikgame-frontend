@@ -30,13 +30,10 @@ function JoinForm() {
   async function submitJoin(tokenValue: string) {
     setLoading(true);
     setError(null);
+    // Écraser l'ancien token avant l'appel pour que l'intercepteur Axios utilise le nouveau
+    localStorage.setItem('player_token', tokenValue);
     try {
-      await api.post(
-        '/player/join',
-        {},
-        { headers: { 'X-Player-Token': tokenValue } }
-      );
-      localStorage.setItem('player_token', tokenValue);
+      await api.post('/player/join', {});
       router.push('/player/game');
     } catch (err: unknown) {
       const msg = (
@@ -46,6 +43,7 @@ function JoinForm() {
         msg ??
           'Token invalide ou session non disponible. Vérifiez votre e-mail.'
       );
+      localStorage.removeItem('player_token');
       setLoading(false);
     }
   }

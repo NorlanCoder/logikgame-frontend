@@ -23,9 +23,13 @@ export function usePlayerChannel(sessionPlayerId: number | null) {
 
     channel
       .listen('.answer.result', (e: WsAnswerResult) => {
-        useGameStore.getState().setResult(e.is_correct, e.correct_answer);
-        if (!e.is_correct) {
-          // Le joueur pourrait être éliminé — le status arrive via player.eliminated
+        const state = useGameStore.getState();
+        if (state.phase === 'round_skipped') return;
+        const scPhases = ['second_chance', 'sc_answered', 'second_chance_danger'];
+        if (scPhases.includes(state.phase)) {
+          state.setScResult(e.is_correct, e.correct_answer);
+        } else {
+          state.setResult(e.is_correct, e.correct_answer);
         }
       })
       .listen('.hint.applied', (e: WsHintApplied) => {

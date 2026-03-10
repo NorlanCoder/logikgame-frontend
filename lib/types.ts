@@ -355,6 +355,7 @@ export interface WsQuestionClosed {
 
 export interface WsPlayerEliminated {
   eliminated: { pseudo: string; reason: EliminationReason }[];
+  eliminated_player_ids: number[];
   players_remaining: number;
   jackpot: number;
 }
@@ -419,6 +420,12 @@ export interface WsSecondChanceLaunched {
     launched_at: string;
     choices?: QuestionChoice[];
   };
+}
+
+export interface WsSecondChanceRevealed {
+  main_question_id: number;
+  correct_answer: string;
+  choices?: (QuestionChoice & { is_correct: boolean })[];
 }
 
 // ─── API Error ───────────────────────────────────────────────

@@ -18,8 +18,12 @@ type PlayerGamePhase =
   | 'result'         // Résultat affiché (correct/incorrect)
   | 'eliminated'     // Le joueur a été éliminé
   | 'round_skipped'  // Manche passée (manche 4), en attente de la suivante
-  | 'second_chance_waiting' // En attente seconde chance
+  | 'second_chance_danger'  // Mauvaise réponse en manche 3, en attente SC
+  | 'second_chance_safe'    // Bonne réponse en manche 3, en attente question suivante
+  | 'second_chance_waiting' // SC lancée, joueur safe attend
   | 'second_chance'  // Question seconde chance active
+  | 'sc_answered'    // Réponse SC envoyée, en attente résultat
+  | 'sc_result'      // Résultat SC affiché
   | 'finale_choice'  // Choix finale (continuer/abandonner)
   | 'game_ended';    // Fin de partie
 
@@ -72,6 +76,10 @@ interface GameState {
   // Seconde chance (Manche 3)
   secondChanceQuestion: WsSecondChanceLaunched['question'] | null;
   mainQuestionId: number | null;
+  inDangerCount: number;
+  scCorrectAnswer: string | null;
+  scRevealedChoices: (QuestionChoice & { is_correct: boolean })[] | null;
+  scIsCorrect: boolean | null;
 
   // Actions
   setPhase: (phase: PlayerGamePhase) => void;
@@ -90,6 +98,9 @@ interface GameState {
   setSessionPlayerId: (id: number) => void;
   setGameEnded: (finalJackpot: number, winners: WsGameEnded['winners']) => void;
   setSecondChanceQuestion: (question: WsSecondChanceLaunched['question'], failedPlayerIds: number[], mainQuestionId: number) => void;
+  markScAnswered: () => void;
+  setScResult: (isCorrect: boolean, correctAnswer: string) => void;
+  setScRevealedChoices: (choices: (QuestionChoice & { is_correct: boolean })[], correctAnswer: string) => void;
   resetQuestion: () => void;
   resetGame: () => void;
 }
@@ -128,6 +139,10 @@ export const useGameStore = create<GameState>((set) => ({
 
   secondChanceQuestion: null,
   mainQuestionId: null,
+  inDangerCount: 0,
+  scCorrectAnswer: null,
+  scRevealedChoices: null,
+  scIsCorrect: null,
 
   setPhase: (phase) => set({ phase }),
 
@@ -146,6 +161,11 @@ export const useGameStore = create<GameState>((set) => ({
       correctAnswer: null,
       revealedChoices: null,
       eliminatedPlayers: [],
+      hintUsed: false,
+      hintAvailable: false,
+      removedChoiceIds: [],
+      revealedLetters: [],
+      hintText: null,
     });
   },
 
@@ -165,16 +185,46 @@ export const useGameStore = create<GameState>((set) => ({
       eliminatedPlayers: [],
       secondChanceQuestion: null,
       mainQuestionId: null,
+      inDangerCount: 0,
+      scCorrectAnswer: null,
+      scRevealedChoices: null,
+      scIsCorrect: null,
+      // Ne pas reset hintUsed — l'indice est limité à 1 par manche, pas par question
+      hintAvailable: false,
+      removedChoiceIds: [],
+      revealedLetters: [],
+      hintText: null,
     });
   },
 
   setSelectedChoice: (choiceId) => set({ selectedChoiceId: choiceId }),
   setAnswerValue: (value) => set({ answerValue: value }),
 
-  markAnswered: () => set({ hasAnswered: true, phase: 'answered' }),
+  markAnswered: () => {
+    const state = useGameStore.getState();
+    if (state.phase === 'eliminated' || state.phase === 'game_ended') return;
+    set({ hasAnswered: true, phase: 'answered' });
+  },
 
-  setResult: (isCorrect, correctAnswer) =>
-    set({ isCorrect, correctAnswer, phase: 'result' }),
+  setResult: (isCorrect, correctAnswer) => {
+    const state = useGameStore.getState();
+    if (state.phase === 'eliminated' || state.phase === 'game_ended') return;
+    // En manche 3, si le reveal est déjà passé et qu'il y a des joueurs en danger,
+    // aller directement en danger/safe au lieu de rester en 'result'
+    if (
+      state.currentRound?.round_type === 'second_chance' &&
+      state.revealedChoices !== null &&
+      state.inDangerCount > 0
+    ) {
+      set({
+        isCorrect,
+        correctAnswer,
+        phase: isCorrect === false ? 'second_chance_danger' : 'second_chance_safe',
+      });
+    } else {
+      set({ isCorrect, correctAnswer, phase: 'result' });
+    }
+  },
 
   setRevealedChoices: (choices) => set({ revealedChoices: choices }),
 
@@ -219,6 +269,7 @@ export const useGameStore = create<GameState>((set) => ({
 
   setSecondChanceQuestion: (question, failedPlayerIds, mainQuestionId) => {
     const state = useGameStore.getState();
+    if (state.phase === 'eliminated' || state.phase === 'game_ended') return;
     const isFailed = failedPlayerIds.includes(state.sessionPlayerId ?? -1);
     set({
       secondChanceQuestion: question,
@@ -231,7 +282,27 @@ export const useGameStore = create<GameState>((set) => ({
     });
   },
 
-  resetQuestion: () =>
+  markScAnswered: () => {
+    const state = useGameStore.getState();
+    if (state.phase === 'eliminated' || state.phase === 'game_ended') return;
+    set({ hasAnswered: true, phase: 'sc_answered' });
+  },
+
+  setScResult: (isCorrect, correctAnswer) => {
+    const state = useGameStore.getState();
+    if (state.phase === 'eliminated' || state.phase === 'game_ended') return;
+    set({ scIsCorrect: isCorrect, scCorrectAnswer: correctAnswer, phase: 'sc_result' });
+  },
+
+  setScRevealedChoices: (choices, correctAnswer) => {
+    const state = useGameStore.getState();
+    if (state.phase === 'eliminated' || state.phase === 'game_ended') return;
+    set({ scRevealedChoices: choices, scCorrectAnswer: correctAnswer });
+  },
+
+  resetQuestion: () => {
+    const state = useGameStore.getState();
+    if (state.phase === 'eliminated' || state.phase === 'game_ended' || state.phase === 'round_skipped') return;
     set({
       currentQuestion: null,
       selectedChoiceId: null,
@@ -245,7 +316,12 @@ export const useGameStore = create<GameState>((set) => ({
       eliminatedPlayers: [],
       secondChanceQuestion: null,
       mainQuestionId: null,
-    }),
+      inDangerCount: 0,
+      scCorrectAnswer: null,
+      scRevealedChoices: null,
+      scIsCorrect: null,
+    });
+  },
 
   resetGame: () =>
     set({

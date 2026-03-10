@@ -22,8 +22,10 @@ import {
   SkipForward,
   Eye,
   LogOut,
+  AlertTriangle,
 } from 'lucide-react';
 import clsx from 'clsx';
+import { toast } from 'sonner';
 
 // ─── Types locaux ─────────────────────────────────────────────
 
@@ -111,6 +113,10 @@ export default function PlayerGamePage() {
 
   const secondChanceQuestion = useGameStore((s) => s.secondChanceQuestion);
   const mainQuestionId = useGameStore((s) => s.mainQuestionId);
+  const scIsCorrect = useGameStore((s) => s.scIsCorrect);
+  const scCorrectAnswer = useGameStore((s) => s.scCorrectAnswer);
+  const scRevealedChoices = useGameStore((s) => s.scRevealedChoices);
+  const markScAnswered = useGameStore((s) => s.markScAnswered);
 
   const { startCountdown } = useTimer();
   const sessionPlayerId = useGameStore((s) => s.sessionPlayerId);
@@ -229,8 +235,9 @@ export default function PlayerGamePage() {
 
       await api.post('/player/answer', body);
       markAnswered();
-    } catch {
-      // Déjà répondu ou erreur
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Erreur lors de l\'envoi de la réponse';
+      toast.error(msg);
     } finally {
       setSubmitting(false);
     }
@@ -240,8 +247,9 @@ export default function PlayerGamePage() {
     try {
       const res = await api.post<{ hint: { hint_type: string; removed_choice_ids?: number[]; revealed_letters?: string[]; masked_answer?: string; range_hint_text?: string; range_min?: number; range_max?: number; time_penalty_seconds: number } }>('/player/hint');
       applyHint(res.data.hint);
-    } catch {
-      // Indice non disponible
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Indice non disponible';
+      toast.error(msg);
     }
   }
 
@@ -266,9 +274,10 @@ export default function PlayerGamePage() {
       }
 
       await api.post('/player/answer', body);
-      markAnswered();
-    } catch {
-      // Déjà répondu ou erreur
+      markScAnswered();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Erreur lors de l\'envoi de la réponse';
+      toast.error(msg);
     } finally {
       setSubmitting(false);
     }
@@ -278,8 +287,9 @@ export default function PlayerGamePage() {
     try {
       await api.post('/player/pass-manche');
       setPhase('round_skipped');
-    } catch {
-      // Non autorisé
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Impossible de passer la manche';
+      toast.error(msg);
     }
   }
 
@@ -287,8 +297,9 @@ export default function PlayerGamePage() {
     try {
       await api.post('/player/finale-choice', { choice });
       markAnswered();
-    } catch {
-      // Erreur
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Erreur';
+      toast.error(msg);
     }
   }
 
@@ -386,6 +397,42 @@ export default function PlayerGamePage() {
           </div>
         )}
 
+        {/* ── SECOND CHANCE DANGER (mauvaise réponse, en attente SC) ── */}
+        {phase === 'second_chance_danger' && (
+          <div className="flex flex-col items-center gap-4 text-center">
+            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-red-600/20 animate-pulse">
+              <AlertTriangle className="h-10 w-10 text-red-400" />
+            </div>
+            <h2 className="text-xl font-bold text-red-400">Vous êtes en danger !</h2>
+            <p className="text-gray-400">
+              Préparez-vous pour la question de seconde chance…
+            </p>
+            <div className="mt-4 flex items-center gap-2">
+              <div className="h-3 w-3 animate-bounce rounded-full bg-red-500 [animation-delay:0ms]" />
+              <div className="h-3 w-3 animate-bounce rounded-full bg-red-500 [animation-delay:150ms]" />
+              <div className="h-3 w-3 animate-bounce rounded-full bg-red-500 [animation-delay:300ms]" />
+            </div>
+          </div>
+        )}
+
+        {/* ── SECOND CHANCE SAFE (bonne réponse, en attente question suivante) ── */}
+        {phase === 'second_chance_safe' && (
+          <div className="flex flex-col items-center gap-4 text-center">
+            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-green-600/20">
+              <CheckCircle2 className="h-10 w-10 text-green-400" />
+            </div>
+            <h2 className="text-xl font-bold text-green-400">Bonne réponse !</h2>
+            <p className="text-gray-400">
+              Les autres joueurs tentent leur seconde chance…
+            </p>
+            <div className="mt-4 flex items-center gap-2">
+              <div className="h-3 w-3 animate-bounce rounded-full bg-green-500 [animation-delay:0ms]" />
+              <div className="h-3 w-3 animate-bounce rounded-full bg-green-500 [animation-delay:150ms]" />
+              <div className="h-3 w-3 animate-bounce rounded-full bg-green-500 [animation-delay:300ms]" />
+            </div>
+          </div>
+        )}
+
         {/* ── SECOND CHANCE WAITING (bonne réponse → attente) ── */}
         {phase === 'second_chance_waiting' && (
           <div className="flex flex-col items-center gap-4 text-center">
@@ -425,6 +472,27 @@ export default function PlayerGamePage() {
               totalDuration={secondChanceQuestion.duration}
             />
           </div>
+        )}
+
+        {/* ── SC ANSWERED (attente résultat SC) ── */}
+        {phase === 'sc_answered' && (
+          <div className="flex flex-col items-center gap-4 text-center">
+            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-purple-600/20">
+              <Shield className="h-10 w-10 text-purple-400" />
+            </div>
+            <h2 className="text-xl font-bold">Réponse envoyée !</h2>
+            <p className="text-gray-400">En attente du résultat de la seconde chance…</p>
+          </div>
+        )}
+
+        {/* ── SC RESULT (résultat seconde chance) ── */}
+        {phase === 'sc_result' && (
+          <ResultView
+            isCorrect={scIsCorrect}
+            correctAnswer={scCorrectAnswer}
+            revealedChoices={scRevealedChoices}
+            labelPrefix="Seconde chance"
+          />
         )}
 
         {/* ── RESULT ── */}
@@ -678,11 +746,14 @@ function ResultView({
   isCorrect,
   correctAnswer,
   revealedChoices,
+  labelPrefix,
 }: {
   isCorrect: boolean | null;
   correctAnswer: string | null;
   revealedChoices: ({ id: number; label: string; is_correct: boolean })[] | null;
+  labelPrefix?: string;
 }) {
+  const prefix = labelPrefix ? `${labelPrefix} — ` : '';
   return (
     <div className="flex flex-col items-center gap-6 text-center">
       {isCorrect === true ? (
@@ -690,21 +761,21 @@ function ResultView({
           <div className="flex h-24 w-24 items-center justify-center rounded-full bg-green-600/20">
             <CheckCircle2 className="h-14 w-14 text-green-400" />
           </div>
-          <h2 className="text-2xl font-bold text-green-400">Bonne réponse !</h2>
+          <h2 className="text-2xl font-bold text-green-400">{prefix}Bonne réponse !</h2>
         </>
       ) : isCorrect === false ? (
         <>
           <div className="flex h-24 w-24 items-center justify-center rounded-full bg-red-600/20">
             <XCircle className="h-14 w-14 text-red-400" />
           </div>
-          <h2 className="text-2xl font-bold text-red-400">Mauvaise réponse</h2>
+          <h2 className="text-2xl font-bold text-red-400">{prefix}Mauvaise réponse</h2>
         </>
       ) : (
         <>
           <div className="flex h-24 w-24 items-center justify-center rounded-full bg-blue-600/20">
             <Shield className="h-14 w-14 text-blue-400" />
           </div>
-          <h2 className="text-2xl font-bold">Résultat</h2>
+          <h2 className="text-2xl font-bold">{prefix}Résultat</h2>
         </>
       )}
 

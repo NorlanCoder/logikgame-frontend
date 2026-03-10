@@ -14,11 +14,10 @@ api.interceptors.request.use((config) => {
     const adminToken = localStorage.getItem('admin_token');
     if (adminToken) {
       config.headers.Authorization = `Bearer ${adminToken}`;
-    } else {
-      const playerToken = localStorage.getItem('player_token');
-      if (playerToken) {
-        config.headers['X-Player-Token'] = playerToken;
-      }
+    }
+    const playerToken = localStorage.getItem('player_token');
+    if (playerToken) {
+      config.headers['X-Player-Token'] = playerToken;
     }
   }
   return config;
