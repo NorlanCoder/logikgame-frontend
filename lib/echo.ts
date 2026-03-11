@@ -1,6 +1,7 @@
 import Echo from 'laravel-echo';
 import type { BroadcastDriver } from 'laravel-echo';
 import Pusher from 'pusher-js';
+import axios from 'axios';
 
 type EchoInstance = Echo<BroadcastDriver>;
 
@@ -16,6 +17,8 @@ export function getEcho(): EchoInstance {
   // Pusher doit être accessible globalement pour laravel-echo
   (window as unknown as Record<string, unknown>).Pusher = Pusher;
 
+  const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+
   echoInstance = new Echo({
     broadcaster: 'reverb',
     key: process.env.NEXT_PUBLIC_REVERB_APP_KEY || '',
@@ -24,6 +27,32 @@ export function getEcho(): EchoInstance {
     wssPort: Number(process.env.NEXT_PUBLIC_REVERB_PORT) || 8080,
     forceTLS: process.env.NEXT_PUBLIC_REVERB_SCHEME === 'https',
     enabledTransports: ['ws', 'wss'],
+    authorizer: (channel: { name: string }) => ({
+      authorize: (socketId: string, callback: (error: unknown, data: unknown) => void) => {
+        const playerToken = typeof window !== 'undefined' ? localStorage.getItem('player_token') : null;
+        const adminToken = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null;
+
+        // Déterminer l'endpoint et les headers selon le type de canal
+        const isPlayerChannel = channel.name.startsWith('private-player.');
+        const authUrl = isPlayerChannel
+          ? `${backendUrl}/player/broadcasting/auth`
+          : `${backendUrl.replace(/\/api$/, '')}/broadcasting/auth`;
+
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (isPlayerChannel && playerToken) {
+          headers['X-Player-Token'] = playerToken;
+        } else if (adminToken) {
+          headers['Authorization'] = `Bearer ${adminToken}`;
+        }
+
+        axios.post(authUrl, {
+          socket_id: socketId,
+          channel_name: channel.name,
+        }, { headers })
+          .then((response) => callback(null, response.data))
+          .catch((error) => callback(error, null));
+      },
+    }),
   });
 
   return echoInstance;

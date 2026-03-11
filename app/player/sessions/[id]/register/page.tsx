@@ -5,7 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Button, Input, Label } from '@/components/ui';
 import api from '@/lib/api';
-import type { Session, ApiError } from '@/lib/types';
+import type { Session, Registration, ApiError } from '@/lib/types';
 import {
   Loader2,
   Calendar,
@@ -13,6 +13,8 @@ import {
   Trophy,
   ArrowLeft,
   ImageOff,
+  AlertTriangle,
+  CheckCircle2,
 } from 'lucide-react';
 
 export default function SessionRegisterPage({
@@ -28,6 +30,7 @@ export default function SessionRegisterPage({
 
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [alreadyRegistered, setAlreadyRegistered] = useState<Registration | null>(null);
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [generalError, setGeneralError] = useState<string | null>(null);
 
@@ -57,11 +60,15 @@ export default function SessionRegisterPage({
     setGeneralError(null);
 
     try {
-      await api.post('/player/register', {
+      const res = await api.post('/player/register', {
         ...form,
         session_id: Number(id),
       });
-      setSuccess(true);
+      if (res.data?.registration) {
+        setAlreadyRegistered(res.data.registration);
+      } else {
+        setSuccess(true);
+      }
     } catch (err: unknown) {
       const resp = (err as { response?: { data?: ApiError & { message?: string } } }).response
         ?.data;
@@ -97,12 +104,44 @@ export default function SessionRegisterPage({
     );
   }
 
+  // — Already registered
+  if (alreadyRegistered) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-8">
+        <div className="w-full max-w-md rounded-2xl border border-yellow-700/50 bg-yellow-900/20 p-8 text-center">
+          <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-full bg-yellow-600/20">
+            <AlertTriangle className="h-8 w-8 text-yellow-400" />
+          </div>
+          <h2 className="text-2xl font-bold text-yellow-300">Déjà inscrit</h2>
+          <p className="mt-2 text-gray-300">
+            Vous êtes déjà inscrit à{' '}
+            <span className="font-semibold text-white">{session.name}</span>.
+          </p>
+          <div className="mt-5 rounded-xl border border-gray-700 bg-gray-800/60 p-4 text-left text-sm text-gray-300 space-y-1">
+            <p><span className="text-gray-500">Nom :</span> {alreadyRegistered.player?.full_name}</p>
+            <p><span className="text-gray-500">Pseudo :</span> {alreadyRegistered.player?.pseudo}</p>
+            <p><span className="text-gray-500">Email :</span> {alreadyRegistered.player?.email}</p>
+            <p><span className="text-gray-500">Téléphone :</span> {alreadyRegistered.player?.phone}</p>
+          </div>
+          <Link
+            href="/"
+            className="mt-6 inline-block rounded-lg bg-yellow-600 px-6 py-2 text-sm font-semibold transition-colors hover:bg-yellow-700"
+          >
+            Retour à l&apos;accueil
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   // — Registration success
   if (success) {
     return (
       <div className="flex min-h-screen items-center justify-center p-8">
         <div className="text-center">
-          <div className="mb-4 text-5xl">✅</div>
+          <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-full bg-green-600/20">
+            <CheckCircle2 className="h-8 w-8 text-green-400" />
+          </div>
           <h2 className="text-2xl font-bold">Inscription réussie !</h2>
           <p className="mt-2 text-gray-400">
             Vous êtes inscrit à <span className="font-semibold text-white">{session.name}</span>.

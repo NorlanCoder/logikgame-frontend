@@ -13,7 +13,8 @@ import {
 } from '@/components/ui';
 import api from '@/lib/api';
 import type { Session } from '@/lib/types';
-import { Plus, Calendar, Users, Trophy, ClipboardList } from 'lucide-react';
+import Image from 'next/image';
+import { Plus, Calendar, Users, Trophy, ClipboardList, ImageOff } from 'lucide-react';
 
 export default function AdminSessionsPage() {
   const { sessions, setSessions } = useSessionStore();
@@ -54,8 +55,23 @@ export default function AdminSessionsPage() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {sessions.map((session) => (
             <Link key={session.id} href={`/admin/sessions/${session.id}`}>
-              <Card className="transition-shadow hover:shadow-md">
-                <CardHeader className="pb-3">
+              <Card className="overflow-hidden pt-0 transition-shadow hover:shadow-md">
+                {session.cover_image_url ? (
+                  <div className="relative h-36 w-full">
+                    <Image
+                      src={session.cover_image_url}
+                      alt={session.name}
+                      fill
+                      className="object-cover"
+                      sizes="(max-width: 768px) 100vw, 400px"
+                    />
+                  </div>
+                ) : (
+                  <div className="flex h-36 w-full items-center justify-center bg-muted">
+                    <ImageOff className="h-8 w-8 text-muted-foreground/30" />
+                  </div>
+                )}
+                <CardHeader className="pb-3 pt-4">
                   <div className="flex items-start justify-between">
                     <CardTitle className="text-base">
                       {session.name}

@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { Button, Input, Label } from '@/components/ui';
 import api from '@/lib/api';
 import type { ApiError } from '@/lib/types';
-import { Loader2 } from 'lucide-react';
+import { Loader2, CheckCircle2 } from 'lucide-react';
 
 function RegisterForm() {
   const searchParams = useSearchParams();
@@ -50,7 +50,9 @@ function RegisterForm() {
     return (
       <div className="flex min-h-screen items-center justify-center p-8">
         <div className="text-center">
-          <div className="mb-4 text-5xl">✅</div>
+          <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-full bg-green-600/20">
+            <CheckCircle2 className="h-8 w-8 text-green-400" />
+          </div>
           <h2 className="text-2xl font-bold">Inscription réussie !</h2>
           <p className="mt-2 text-muted-foreground">
             Vérifiez votre e-mail pour la confirmation et les prochaines étapes.

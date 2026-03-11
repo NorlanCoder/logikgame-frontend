@@ -40,6 +40,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import Image from 'next/image';
 import {
   ArrowLeft,
   Calendar,
@@ -54,9 +55,14 @@ import {
   ChevronRight,
   ImageOff,
   Play,
-  UserCheck,
   DoorOpen,
   Lock,
+  ClipboardList,
+  Star,
+  MailCheck,
+  Monitor,
+  Copy,
+  RefreshCw,
 } from 'lucide-react';
 
 export default function AdminSessionDetailPage({
@@ -96,6 +102,10 @@ export default function AdminSessionDetailPage({
     successMsg: string;
   } | null>(null);
 
+  // Projection code state
+  const [projectionCode, setProjectionCode] = useState<string | null>(null);
+  const [projectionLoading, setProjectionLoading] = useState(false);
+
   useEffect(() => {
     async function fetchSession() {
       try {
@@ -123,8 +133,21 @@ export default function AdminSessionDetailPage({
       }
     }
 
+    async function fetchProjectionCode() {
+      try {
+        const res = await api.get<{ access_code: string }>(
+          `/admin/sessions/${id}/projection`
+        );
+        setProjectionCode(res.data.access_code ?? null);
+      } catch {
+        // 404 = pas de code généré encore
+        setProjectionCode(null);
+      }
+    }
+
     fetchSession();
     fetchRounds();
+    fetchProjectionCode();
   }, [id, setCurrentSession, router]);
 
   // Sync edit form when dialog opens
@@ -207,6 +230,10 @@ export default function AdminSessionDetailPage({
       setCurrentSession(updated);
       updateSession(updated);
       toast.success(pendingAction.successMsg);
+      if (pendingAction.endpoint === 'start') {
+        router.push(`/admin/sessions/${id}/game`);
+        return;
+      }
     } catch (err: unknown) {
       const apiErr = (
         err as { response?: { data?: { message?: string } } }
@@ -217,6 +244,28 @@ export default function AdminSessionDetailPage({
       setActionConfirmOpen(false);
       setPendingAction(null);
     }
+  }
+
+  async function generateProjectionCode() {
+    setProjectionLoading(true);
+    try {
+      const res = await api.post<{ access_code: string }>(
+        `/admin/sessions/${id}/projection/generate`
+      );
+      setProjectionCode(res.data.access_code);
+      toast.success('Code de projection généré');
+    } catch {
+      toast.error('Impossible de générer le code de projection');
+    } finally {
+      setProjectionLoading(false);
+    }
+  }
+
+  function copyProjectionCode() {
+    if (!projectionCode) return;
+    const url = `${window.location.origin}/projection/${projectionCode}`;
+    navigator.clipboard.writeText(url);
+    toast.success('URL de projection copiée');
   }
 
   if (loading) {
@@ -253,6 +302,7 @@ export default function AdminSessionDetailPage({
           variant: 'default' as const,
         };
       case 'registration_open':
+      case 'preselection':
         return {
           endpoint: 'close-registration',
           label: 'Clôturer les inscriptions',
@@ -262,10 +312,18 @@ export default function AdminSessionDetailPage({
         };
       case 'registration_closed':
         return {
-          endpoint: 'open-preselection',
-          label: 'Ouvrir la préselection',
-          successMsg: 'Phase de préselection ouverte',
-          icon: UserCheck,
+          endpoint: 'confirm-selection',
+          label: 'Confirmer la sélection',
+          successMsg: 'Sélection confirmée — invitations envoyées',
+          icon: MailCheck,
+          variant: 'default' as const,
+        };
+      case 'ready':
+        return {
+          endpoint: 'start',
+          label: 'Démarrer la session',
+          successMsg: 'Session démarrée',
+          icon: Play,
           variant: 'default' as const,
         };
       default:
@@ -283,6 +341,17 @@ export default function AdminSessionDetailPage({
               <ArrowLeft />
             </Link>
           </Button>
+          {currentSession.cover_image_url && (
+            <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg">
+              <Image
+                src={currentSession.cover_image_url}
+                alt={currentSession.name}
+                fill
+                className="object-cover"
+                sizes="48px"
+              />
+            </div>
+          )}
           <div>
             <h1 className="text-2xl font-bold text-foreground">
               {currentSession.name}
@@ -313,6 +382,16 @@ export default function AdminSessionDetailPage({
             >
               <lifecycleAction.icon className="mr-1 h-4 w-4" />
               {lifecycleAction.label}
+            </Button>
+          )}
+
+          {(currentSession.status === 'in_progress' ||
+            currentSession.status === 'ready') && (
+            <Button size="sm" variant="outline" asChild>
+              <Link href={`/admin/sessions/${id}/game`}>
+                <Play className="mr-1 h-4 w-4" />
+                Pilotage
+              </Link>
             </Button>
           )}
 
@@ -502,7 +581,7 @@ export default function AdminSessionDetailPage({
       {/* Stats cards */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
-          <CardContent className="flex items-center gap-3 pt-6">
+          <CardContent className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
               <Calendar className="h-5 w-5 text-primary" />
             </div>
@@ -519,7 +598,7 @@ export default function AdminSessionDetailPage({
         </Card>
 
         <Card>
-          <CardContent className="flex items-center gap-3 pt-6">
+          <CardContent className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
               <Users className="h-5 w-5 text-primary" />
             </div>
@@ -533,7 +612,7 @@ export default function AdminSessionDetailPage({
         </Card>
 
         <Card>
-          <CardContent className="flex items-center gap-3 pt-6">
+          <CardContent className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
               <Trophy className="h-5 w-5 text-primary" />
             </div>
@@ -547,7 +626,7 @@ export default function AdminSessionDetailPage({
         </Card>
 
         <Card>
-          <CardContent className="flex items-center gap-3 pt-6">
+          <CardContent className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
               <ListChecks className="h-5 w-5 text-primary" />
             </div>
@@ -569,19 +648,89 @@ export default function AdminSessionDetailPage({
       {/* Pré-sélection */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <CardTitle>Questions de pré-sélection</CardTitle>
+              <CardTitle>Pré-sélection</CardTitle>
               <CardDescription>
-                Gérez les questions posées aux candidats lors de la phase de pré-sélection.
+                Gérez les questions, consultez les résultats et les joueurs sélectionnés.
               </CardDescription>
             </div>
-            <Button variant="outline" size="sm" asChild>
-              <Link href={`/admin/sessions/${id}/preselection`}>
-                Gérer
-                <ChevronRight className="ml-1 h-4 w-4" />
-              </Link>
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" asChild>
+                <Link href={`/admin/sessions/${id}/preselection`}>
+                  <ListChecks className="mr-1 h-4 w-4" />
+                  Questions
+                </Link>
+              </Button>
+              <Button variant="outline" size="sm" asChild>
+                <Link href={`/admin/sessions/${id}/preselection/registrations`}>
+                  <ClipboardList className="mr-1 h-4 w-4" />
+                  Résultats
+                </Link>
+              </Button>
+              <Button variant="outline" size="sm" asChild>
+                <Link href={`/admin/sessions/${id}/preselection/selected`}>
+                  <Star className="mr-1 h-4 w-4" />
+                  Sélectionnés
+                </Link>
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+      </Card>
+
+      {/* Projection */}
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Monitor className="h-5 w-5" />
+                Projection
+              </CardTitle>
+              <CardDescription>
+                Code d&apos;accès pour l&apos;écran de projection publique.
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              {projectionCode ? (
+                <>
+                  <div className="flex flex-col gap-1">
+                    <code className="rounded-md bg-muted px-3 py-1.5 text-lg font-mono font-bold tracking-widest">
+                      {projectionCode}
+                    </code>
+                    <span className="text-xs text-muted-foreground">
+                      /projection/{projectionCode}
+                    </span>
+                  </div>
+                  <Button variant="outline" size="icon" onClick={copyProjectionCode} title="Copier">
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={generateProjectionCode}
+                    disabled={projectionLoading}
+                  >
+                    {projectionLoading ? (
+                      <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="mr-1 h-4 w-4" />
+                    )}
+                    Régénérer
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  size="sm"
+                  onClick={generateProjectionCode}
+                  disabled={projectionLoading}
+                >
+                  {projectionLoading && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+                  Générer un code
+                </Button>
+              )}
+            </div>
           </div>
         </CardHeader>
       </Card>

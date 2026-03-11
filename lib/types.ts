@@ -225,12 +225,15 @@ export interface Player {
 
 export interface PreselectionQuestion {
   id: number;
-  session_id: number;
+  session_id?: number;
   text: string;
   answer_type: AnswerType;
   correct_answer: string | null;
+  duration: number;
+  number_is_decimal: boolean;
   display_order: number;
   media_url?: string | null;
+  media_type?: MediaType;
   choices?: {
     id: number;
     label: string;
@@ -325,14 +328,26 @@ export interface WsQuestionLaunched {
     media_type: MediaType;
     duration: number;
     launched_at: string;
+    assigned_player_id?: number | null;
+    assigned_pseudo?: string | null;
     choices?: QuestionChoice[];
   };
+}
+
+export interface WsDuelQuestionsAssigned {
+  assignments: {
+    session_player_id: number;
+    pseudo: string;
+    turn_order: number;
+    question_id: number;
+  }[];
 }
 
 export interface WsAnswerResult {
   question_id: number;
   is_correct: boolean;
   correct_answer: string;
+  personal_jackpot?: number;
 }
 
 export interface WsAnswerRevealed {
@@ -346,10 +361,14 @@ export interface WsQuestionClosed {
   answers_received: number;
   correct_count: number;
   eliminated_count: number;
+  in_danger_count: number;
+  in_danger_players: string[];
+  player_results: { pseudo: string; is_correct: boolean; is_timeout: boolean }[];
 }
 
 export interface WsPlayerEliminated {
   eliminated: { pseudo: string; reason: EliminationReason }[];
+  eliminated_player_ids: number[];
   players_remaining: number;
   jackpot: number;
 }
@@ -387,6 +406,11 @@ export interface WsHintApplied {
   hint: {
     hint_type: HintType;
     removed_choice_ids?: number[];
+    revealed_letters?: string[];
+    masked_answer?: string;
+    range_hint_text?: string;
+    range_min?: number;
+    range_max?: number;
     time_penalty_seconds: number;
   };
 }
@@ -394,6 +418,52 @@ export interface WsHintApplied {
 export interface WsGameEnded {
   final_jackpot: number;
   winners: { pseudo: string; final_gain: number }[];
+}
+
+export interface WsFinaleChoicesRevealed {
+  choices: { session_player_id: number; choice: string; pseudo: string }[];
+  scenario: 'all_continue' | 'some_abandon' | 'all_abandon';
+}
+
+export interface WsFinaleVoteLaunched {
+  finalists: { session_player_id: number; pseudo: string }[];
+}
+
+export interface WsTop4Finalized {
+  rankings: {
+    session_player_id: number;
+    pseudo: string;
+    correct_answers_count: number;
+    total_response_time_ms: number;
+    rank: number;
+    is_qualified: boolean;
+  }[];
+}
+
+export interface WsSecondChanceLaunched {
+  main_question_id: number;
+  failed_player_ids: number[];
+  question: {
+    id: number;
+    text: string;
+    answer_type: AnswerType;
+    media_url: string | null;
+    media_type: MediaType;
+    duration: number;
+    launched_at: string;
+    choices?: QuestionChoice[];
+  };
+}
+
+export interface WsSecondChanceRevealed {
+  main_question_id: number;
+  correct_answer: string;
+  choices?: (QuestionChoice & { is_correct: boolean })[];
+}
+
+export interface WsSecondChanceClosed {
+  main_question_id: number;
+  player_results: { pseudo: string; is_correct: boolean; is_timeout: boolean }[];
 }
 
 // ─── API Error ───────────────────────────────────────────────

@@ -371,13 +371,20 @@ export default function AdminPreselectionQuestionsPage({
           </div>
         </div>
 
-        <Dialog
-          open={questionOpen}
-          onOpenChange={(open) => {
-            setQuestionOpen(open);
-            if (!open) setEditingQuestion(null);
-          }}
-        >
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/admin/sessions/${sessionId}/preselection/registrations`}>
+              Voir les résultats
+            </Link>
+          </Button>
+
+          <Dialog
+            open={questionOpen}
+            onOpenChange={(open) => {
+              setQuestionOpen(open);
+              if (!open) setEditingQuestion(null);
+            }}
+          >
           <DialogTrigger asChild>
             <Button size="sm">
               <Plus className="mr-1 h-4 w-4" />
@@ -660,6 +667,7 @@ export default function AdminPreselectionQuestionsPage({
             </form>
           </DialogContent>
         </Dialog>
+      </div>
       </div>
 
       {/* Stat card */}

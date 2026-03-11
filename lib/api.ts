@@ -12,10 +12,12 @@ const api = axios.create({
 api.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
     const adminToken = localStorage.getItem('admin_token');
+    if (adminToken) {
+      config.headers.Authorization = `Bearer ${adminToken}`;
+    }
     const playerToken = localStorage.getItem('player_token');
-    const token = adminToken || playerToken;
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+    if (playerToken) {
+      config.headers['X-Player-Token'] = playerToken;
     }
   }
   return config;
