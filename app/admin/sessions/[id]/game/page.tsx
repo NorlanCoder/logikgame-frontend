@@ -8,6 +8,7 @@ import type {
   Session,
   SessionRound,
   Question,
+  QuestionStatus,
   SessionStatus,
   WsQuestionLaunched,
   WsQuestionClosed,
@@ -138,7 +139,7 @@ export default function AdminGameMonitorPage({
   // Confirmation dialog
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<{
-    action: () => Promise<void>;
+    action: () => Promise<unknown>;
     title: string;
     description: string;
   } | null>(null);
@@ -148,7 +149,7 @@ export default function AdminGameMonitorPage({
 
   // Mise à jour du statut d'une question dans les rounds
   const updateQuestionStatus = useCallback(
-    (questionId: number, status: string) => {
+    (questionId: number, status: QuestionStatus) => {
       setRounds((prev) =>
         prev.map((round) => ({
           ...round,
@@ -459,7 +460,7 @@ export default function AdminGameMonitorPage({
   function confirmGameAction(
     title: string,
     description: string,
-    action: () => Promise<void>
+    action: () => Promise<unknown>
   ) {
     setPendingAction({ title, description, action });
     setConfirmOpen(true);
