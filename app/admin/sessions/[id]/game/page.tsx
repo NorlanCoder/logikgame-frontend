@@ -988,20 +988,37 @@ export default function AdminGameMonitorPage({
                       }
                       return true;
                     }) && (
-                      <div className="mt-4 flex justify-end border-t pt-4">
-                        <Button
-                          size="sm"
-                          onClick={nextRound}
-                          disabled={!!actionLoading}
-                          className="gap-1"
-                        >
-                          {actionLoading === 'next-round' ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <SkipForward className="h-3.5 w-3.5" />
-                          )}
-                          Manche suivante
-                        </Button>
+                      <div className="mt-4 flex justify-end gap-2 border-t pt-4">
+                        {round.round_type === 'finale' ? (
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={endGame}
+                            disabled={!!actionLoading}
+                            className="gap-1"
+                          >
+                            {actionLoading === 'end' ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Flag className="h-3.5 w-3.5" />
+                            )}
+                            Terminer la partie
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            onClick={nextRound}
+                            disabled={!!actionLoading}
+                            className="gap-1"
+                          >
+                            {actionLoading === 'next-round' ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <SkipForward className="h-3.5 w-3.5" />
+                            )}
+                            Manche suivante
+                          </Button>
+                        )}
                       </div>
                     )}
                 </CardContent>

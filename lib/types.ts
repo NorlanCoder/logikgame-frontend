@@ -354,6 +354,7 @@ export interface WsAnswerRevealed {
   question_id: number;
   correct_answer: string;
   choices?: (QuestionChoice & { is_correct: boolean })[];
+  player_results?: { pseudo: string; is_correct: boolean; is_timeout: boolean }[];
 }
 
 export interface WsQuestionClosed {
@@ -459,6 +460,7 @@ export interface WsSecondChanceRevealed {
   main_question_id: number;
   correct_answer: string;
   choices?: (QuestionChoice & { is_correct: boolean })[];
+  player_results?: { pseudo: string; is_correct: boolean; is_timeout: boolean }[];
 }
 
 export interface WsSecondChanceClosed {

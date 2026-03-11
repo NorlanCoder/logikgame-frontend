@@ -105,6 +105,7 @@ interface GameState {
   setAnswerValue: (value: string) => void;
   markAnswered: () => void;
   setResult: (isCorrect: boolean, correctAnswer: string) => void;
+  setResultPending: (isCorrect: boolean, correctAnswer: string) => void;
   setRevealedChoices: (choices: (QuestionChoice & { is_correct: boolean })[]) => void;
   setTimer: (seconds: number) => void;
   updateJackpot: (jackpot: number, playersRemaining: number) => void;
@@ -116,6 +117,7 @@ interface GameState {
   setSecondChanceQuestion: (question: WsSecondChanceLaunched['question'], failedPlayerIds: number[], mainQuestionId: number) => void;
   markScAnswered: () => void;
   setScResult: (isCorrect: boolean, correctAnswer: string) => void;
+  setScResultPending: (isCorrect: boolean, correctAnswer: string) => void;
   setScRevealedChoices: (choices: (QuestionChoice & { is_correct: boolean })[], correctAnswer: string) => void;
   setDuelAssignments: (assignments: DuelAssignment[]) => void;
   resetQuestion: () => void;
@@ -303,6 +305,12 @@ export const useGameStore = create<GameState>((set) => ({
     }
   },
 
+  setResultPending: (isCorrect, correctAnswer) => {
+    const state = useGameStore.getState();
+    if (state.phase === 'eliminated' || state.phase === 'game_ended') return;
+    set({ isCorrect, correctAnswer });
+  },
+
   setRevealedChoices: (choices) => set({ revealedChoices: choices }),
 
   setTimer: (seconds) => set({ timerSeconds: seconds }),
@@ -369,6 +377,12 @@ export const useGameStore = create<GameState>((set) => ({
     const state = useGameStore.getState();
     if (state.phase === 'eliminated' || state.phase === 'game_ended') return;
     set({ scIsCorrect: isCorrect, scCorrectAnswer: correctAnswer, phase: 'sc_result' });
+  },
+
+  setScResultPending: (isCorrect, correctAnswer) => {
+    const state = useGameStore.getState();
+    if (state.phase === 'eliminated' || state.phase === 'game_ended') return;
+    set({ scIsCorrect: isCorrect, scCorrectAnswer: correctAnswer });
   },
 
   setScRevealedChoices: (choices, correctAnswer) => {

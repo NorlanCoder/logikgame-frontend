@@ -68,19 +68,7 @@ export function useSessionChannel(sessionId: number | null) {
         stopCountdown();
         const inDangerCount = e.in_danger_count ?? 0;
         useGameStore.setState({ inDangerCount });
-
-        // En manche 3, si le joueur a déjà reçu son résultat (phase 'result'),
-        // et qu'il y a des joueurs en danger, transitionner vers danger/safe
-        if (
-          state.currentRound?.round_type === 'second_chance' &&
-          inDangerCount > 0 &&
-          state.phase === 'result' &&
-          state.isCorrect !== null
-        ) {
-          useGameStore.setState({
-            phase: state.isCorrect === false ? 'second_chance_danger' : 'second_chance_safe',
-          });
-        }
+        // Plus de transition de phase ici — elle se fait lors du reveal
       })
       .listen('.answer.revealed', (e: WsAnswerRevealed) => {
         const state = useGameStore.getState();
@@ -89,42 +77,42 @@ export function useSessionChannel(sessionId: number | null) {
         state.setRevealedChoices(e.choices ?? []);
         useGameStore.setState({ correctAnswer: e.correct_answer });
 
-        // Si le joueur a répondu mais n'a pas encore reçu son résultat (AnswerResult),
-        // déduire isCorrect depuis les données du reveal
-        if ((state.phase === 'answered' || state.phase === 'result') && state.hasAnswered) {
-          let isCorrect = state.isCorrect;
+        // Déterminer isCorrect : utiliser la valeur du store si déjà reçue via AnswerResult,
+        // sinon déduire depuis les données du reveal
+        let isCorrect = useGameStore.getState().isCorrect;
 
-          // Calculer isCorrect si pas encore déterminé
-          if (isCorrect === null) {
-            const choices = e.choices ?? [];
-            if (state.selectedChoiceId && choices.length > 0) {
-              // QCM : vérifier si le choix sélectionné est correct
-              const selectedChoice = choices.find((c: { id: number; is_correct: boolean }) => c.id === state.selectedChoiceId);
-              isCorrect = selectedChoice?.is_correct ?? false;
-            } else if (state.currentQuestion?.answer_type === 'qcm') {
-              // QCM mais pas de choix sélectionné (timeout localement)
-              isCorrect = false;
-            } else if (e.correct_answer && state.answerValue) {
-              // Texte/Nombre : comparer avec la bonne réponse
-              const normalize = (s: string) => s.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-              isCorrect = normalize(state.answerValue) === normalize(e.correct_answer);
-            } else {
-              isCorrect = false;
-            }
-            useGameStore.setState({ isCorrect });
-          }
-
-          // Transition de phase
-          if (
-            state.currentRound?.round_type === 'second_chance' &&
-            state.inDangerCount > 0
-          ) {
-            useGameStore.setState({
-              phase: isCorrect === false ? 'second_chance_danger' : 'second_chance_safe',
-            });
+        if (isCorrect === null && state.hasAnswered) {
+          const choices = e.choices ?? [];
+          if (state.selectedChoiceId && choices.length > 0) {
+            // QCM : vérifier si le choix sélectionné est correct
+            const selectedChoice = choices.find((c: { id: number; is_correct: boolean }) => c.id === state.selectedChoiceId);
+            isCorrect = selectedChoice?.is_correct ?? false;
+          } else if (state.currentQuestion?.answer_type === 'qcm') {
+            // QCM mais pas de choix sélectionné (timeout localement)
+            isCorrect = false;
+          } else if (e.correct_answer && state.answerValue) {
+            // Texte/Nombre : comparer avec la bonne réponse
+            const normalize = (s: string) => s.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            isCorrect = normalize(state.answerValue) === normalize(e.correct_answer);
           } else {
-            useGameStore.setState({ phase: 'result' });
+            isCorrect = false;
           }
+        }
+
+        // Si le joueur n'a pas répondu du tout
+        if (isCorrect === null) isCorrect = false;
+
+        // Transition de phase — le reveal déclenche maintenant l'affichage du résultat
+        if (
+          state.currentRound?.round_type === 'second_chance' &&
+          useGameStore.getState().inDangerCount > 0
+        ) {
+          useGameStore.setState({
+            isCorrect,
+            phase: isCorrect === false ? 'second_chance_danger' : 'second_chance_safe',
+          });
+        } else {
+          useGameStore.setState({ isCorrect, phase: 'result' });
         }
       })
       .listen('.player.eliminated', (e: WsPlayerEliminated) => {
@@ -182,12 +170,12 @@ export function useSessionChannel(sessionId: number | null) {
         if (state.phase === 'eliminated' || state.phase === 'game_ended') return;
         state.setScRevealedChoices(e.choices ?? [], e.correct_answer);
 
-        // Si le joueur a répondu à la SC mais n'a pas reçu son résultat,
-        // déduire scIsCorrect depuis les données du reveal
-        if (state.phase === 'sc_answered' && state.hasAnswered) {
-          let scIsCorrect = state.scIsCorrect;
+        // Les joueurs qui participaient à la SC transitionnent vers sc_result
+        const scParticipantPhases = ['second_chance', 'sc_answered', 'second_chance_danger'];
+        if (scParticipantPhases.includes(state.phase)) {
+          let scIsCorrect = useGameStore.getState().scIsCorrect;
 
-          if (scIsCorrect === null) {
+          if (scIsCorrect === null && state.hasAnswered) {
             const choices = e.choices ?? [];
             if (state.selectedChoiceId && choices.length > 0) {
               const selected = choices.find((c: { id: number; is_correct: boolean }) => c.id === state.selectedChoiceId);
@@ -201,6 +189,8 @@ export function useSessionChannel(sessionId: number | null) {
               scIsCorrect = false;
             }
           }
+
+          if (scIsCorrect === null) scIsCorrect = false;
 
           useGameStore.setState({
             scIsCorrect,

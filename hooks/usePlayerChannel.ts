@@ -29,11 +29,13 @@ export function usePlayerChannel(sessionPlayerId: number | null) {
         if (e.personal_jackpot != null) {
           useGameStore.setState({ personalJackpot: e.personal_jackpot });
         }
+        // Stocker le résultat SANS changer de phase — la transition se fait
+        // quand la bonne réponse est révélée sur le canal public
         const scPhases = ['second_chance', 'sc_answered', 'second_chance_danger'];
         if (scPhases.includes(state.phase)) {
-          state.setScResult(e.is_correct, e.correct_answer);
+          state.setScResultPending(e.is_correct, e.correct_answer);
         } else {
-          state.setResult(e.is_correct, e.correct_answer);
+          state.setResultPending(e.is_correct, e.correct_answer);
         }
       })
       .listen('.hint.applied', (e: WsHintApplied) => {

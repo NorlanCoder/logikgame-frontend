@@ -278,7 +278,7 @@ export default function ProjectionPage({
         setState((prev) => ({
           ...prev,
           phase: 'question_closed',
-          playerResults: e.player_results ?? [],
+          playerResults: [],
           questionStats: {
             answers_received: e.answers_received,
             correct_count: e.correct_count,
@@ -293,6 +293,7 @@ export default function ProjectionPage({
           ...prev,
           correctAnswer: e.correct_answer,
           revealedChoices: e.choices ?? null,
+          playerResults: e.player_results ?? [],
           phase: 'answer_revealed',
         }));
       })
@@ -363,7 +364,7 @@ export default function ProjectionPage({
         setTimerSeconds(0);
         setState((prev) => ({
           ...prev,
-          scPlayerResults: e.player_results ?? [],
+          scPlayerResults: [],
           phase: 'sc_closed',
         }));
       })
@@ -372,6 +373,7 @@ export default function ProjectionPage({
           ...prev,
           scCorrectAnswer: e.correct_answer,
           scRevealedChoices: e.choices ?? null,
+          scPlayerResults: e.player_results ?? [],
           phase: 'sc_revealed',
         }));
       })
@@ -584,9 +586,6 @@ function QuestionView({
 function QuestionClosedView({ state }: { state: ProjectionState }) {
   const q = state.currentQuestion;
   const stats = state.questionStats;
-  const results = state.playerResults;
-  const correctPlayers = results.filter((r) => r.is_correct);
-  const wrongPlayers = results.filter((r) => !r.is_correct);
 
   return (
     <div className="flex flex-col items-center gap-8 text-center">
@@ -594,86 +593,27 @@ function QuestionClosedView({ state }: { state: ProjectionState }) {
       <div className="rounded-2xl bg-gray-900/60 p-8">
         <Zap className="mx-auto mb-4 h-12 w-12 text-yellow-400" />
         <p className="text-2xl font-bold">Question terminée</p>
+        <p className="mt-2 text-lg text-gray-400">En attente de la révélation…</p>
         {stats && (
-          <>
-            <div className="mt-4 flex gap-8 text-lg">
-              <div>
-                <span className="text-gray-400">Réponses : </span>
-                <span className="font-bold">{stats.answers_received}</span>
-              </div>
-              <div>
-                <span className="text-gray-400">Correctes : </span>
-                <span className="font-bold text-green-400">{stats.correct_count}</span>
-              </div>
-              <div>
-                <span className="text-gray-400">Éliminés : </span>
-                <span className="font-bold text-red-400">{stats.eliminated_count}</span>
-              </div>
+          <div className="mt-4 flex gap-8 text-lg">
+            <div>
+              <span className="text-gray-400">Réponses : </span>
+              <span className="font-bold">{stats.answers_received}</span>
             </div>
-            {stats.in_danger_count > 0 && (
-              <div className="mt-6 rounded-xl border border-orange-700/50 bg-orange-900/20 px-6 py-4">
-                <p className="text-lg font-semibold text-orange-400">
-                  ⚠️ En danger : {stats.in_danger_count} joueur{stats.in_danger_count > 1 ? 's' : ''}
-                </p>
-                <div className="mt-3 flex flex-wrap justify-center gap-2">
-                  {stats.in_danger_players.map((pseudo, i) => (
-                    <span
-                      key={i}
-                      className="rounded-full bg-orange-900/40 px-3 py-1 text-sm font-medium text-orange-300"
-                    >
-                      {pseudo}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </>
+          </div>
         )}
       </div>
-
-      {/* Résultats par joueur */}
-      {results.length > 0 && (
-        <div className="flex w-full max-w-4xl gap-6">
-          {/* Bonnes réponses */}
-          {correctPlayers.length > 0 && (
-            <div className="flex-1 rounded-xl border border-green-700/50 bg-green-900/10 p-4">
-              <div className="mb-3 flex items-center justify-center gap-2 text-green-400">
-                <CheckCircle2 className="h-5 w-5" />
-                <span className="font-semibold">Bonne réponse ({correctPlayers.length})</span>
-              </div>
-              <div className="flex flex-wrap justify-center gap-2">
-                {correctPlayers.map((r, i) => (
-                  <span key={i} className="rounded-full bg-green-900/40 px-3 py-1 text-sm font-medium text-green-300">
-                    {r.pseudo}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-          {/* Mauvaises réponses */}
-          {wrongPlayers.length > 0 && (
-            <div className="flex-1 rounded-xl border border-red-700/50 bg-red-900/10 p-4">
-              <div className="mb-3 flex items-center justify-center gap-2 text-red-400">
-                <XCircle className="h-5 w-5" />
-                <span className="font-semibold">Mauvaise réponse ({wrongPlayers.length})</span>
-              </div>
-              <div className="flex flex-wrap justify-center gap-2">
-                {wrongPlayers.map((r, i) => (
-                  <span key={i} className="rounded-full bg-red-900/40 px-3 py-1 text-sm font-medium text-red-300">
-                    {r.pseudo} {r.is_timeout ? '(timeout)' : ''}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
 
 function AnswerRevealedView({ state }: { state: ProjectionState }) {
   const q = state.currentQuestion;
+  const stats = state.questionStats;
+  const results = state.playerResults;
+  const correctPlayers = results.filter((r) => r.is_correct);
+  const wrongPlayers = results.filter((r) => !r.is_correct);
+
   return (
     <div className="flex w-full max-w-5xl flex-col items-center gap-8">
       {q && <h2 className="text-center text-3xl font-bold">{q.text}</h2>}
@@ -708,6 +648,79 @@ function AnswerRevealedView({ state }: { state: ProjectionState }) {
                 {choice.label}
               </div>
             ))}
+        </div>
+      )}
+
+      {/* Stats */}
+      {stats && (
+        <div className="flex gap-8 text-lg">
+          <div>
+            <span className="text-gray-400">Réponses : </span>
+            <span className="font-bold">{stats.answers_received}</span>
+          </div>
+          <div>
+            <span className="text-gray-400">Correctes : </span>
+            <span className="font-bold text-green-400">{stats.correct_count}</span>
+          </div>
+          <div>
+            <span className="text-gray-400">Éliminés : </span>
+            <span className="font-bold text-red-400">{stats.eliminated_count}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Joueurs en danger */}
+      {stats && stats.in_danger_count > 0 && (
+        <div className="rounded-xl border border-orange-700/50 bg-orange-900/20 px-6 py-4">
+          <p className="text-lg font-semibold text-orange-400">
+            ⚠️ En danger : {stats.in_danger_count} joueur{stats.in_danger_count > 1 ? 's' : ''}
+          </p>
+          <div className="mt-3 flex flex-wrap justify-center gap-2">
+            {stats.in_danger_players.map((pseudo, i) => (
+              <span
+                key={i}
+                className="rounded-full bg-orange-900/40 px-3 py-1 text-sm font-medium text-orange-300"
+              >
+                {pseudo}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Résultats par joueur */}
+      {results.length > 0 && (
+        <div className="flex w-full max-w-4xl gap-6">
+          {correctPlayers.length > 0 && (
+            <div className="flex-1 rounded-xl border border-green-700/50 bg-green-900/10 p-4">
+              <div className="mb-3 flex items-center justify-center gap-2 text-green-400">
+                <CheckCircle2 className="h-5 w-5" />
+                <span className="font-semibold">Bonne réponse ({correctPlayers.length})</span>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2">
+                {correctPlayers.map((r, i) => (
+                  <span key={i} className="rounded-full bg-green-900/40 px-3 py-1 text-sm font-medium text-green-300">
+                    {r.pseudo}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {wrongPlayers.length > 0 && (
+            <div className="flex-1 rounded-xl border border-red-700/50 bg-red-900/10 p-4">
+              <div className="mb-3 flex items-center justify-center gap-2 text-red-400">
+                <XCircle className="h-5 w-5" />
+                <span className="font-semibold">Mauvaise réponse ({wrongPlayers.length})</span>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2">
+                {wrongPlayers.map((r, i) => (
+                  <span key={i} className="rounded-full bg-red-900/40 px-3 py-1 text-sm font-medium text-red-300">
+                    {r.pseudo} {r.is_timeout ? '(timeout)' : ''}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -773,9 +786,6 @@ function ScQuestionView({
 
 function ScClosedView({ state }: { state: ProjectionState }) {
   const q = state.scQuestion;
-  const results = state.scPlayerResults;
-  const correctPlayers = results.filter((r) => r.is_correct);
-  const wrongPlayers = results.filter((r) => !r.is_correct);
 
   return (
     <div className="flex flex-col items-center gap-8 text-center">
@@ -789,48 +799,16 @@ function ScClosedView({ state }: { state: ProjectionState }) {
         <p className="text-2xl font-bold">Seconde chance terminée</p>
         <p className="mt-2 text-lg text-gray-400">En attente de la révélation…</p>
       </div>
-
-      {/* Résultats SC par joueur */}
-      {results.length > 0 && (
-        <div className="flex w-full max-w-4xl gap-6">
-          {correctPlayers.length > 0 && (
-            <div className="flex-1 rounded-xl border border-green-700/50 bg-green-900/10 p-4">
-              <div className="mb-3 flex items-center justify-center gap-2 text-green-400">
-                <CheckCircle2 className="h-5 w-5" />
-                <span className="font-semibold">Sauvé ({correctPlayers.length})</span>
-              </div>
-              <div className="flex flex-wrap justify-center gap-2">
-                {correctPlayers.map((r, i) => (
-                  <span key={i} className="rounded-full bg-green-900/40 px-3 py-1 text-sm font-medium text-green-300">
-                    {r.pseudo}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-          {wrongPlayers.length > 0 && (
-            <div className="flex-1 rounded-xl border border-red-700/50 bg-red-900/10 p-4">
-              <div className="mb-3 flex items-center justify-center gap-2 text-red-400">
-                <XCircle className="h-5 w-5" />
-                <span className="font-semibold">Éliminé ({wrongPlayers.length})</span>
-              </div>
-              <div className="flex flex-wrap justify-center gap-2">
-                {wrongPlayers.map((r, i) => (
-                  <span key={i} className="rounded-full bg-red-900/40 px-3 py-1 text-sm font-medium text-red-300">
-                    {r.pseudo} {r.is_timeout ? '(timeout)' : ''}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
 
 function ScRevealedView({ state }: { state: ProjectionState }) {
   const q = state.scQuestion;
+  const results = state.scPlayerResults;
+  const correctPlayers = results.filter((r) => r.is_correct);
+  const wrongPlayers = results.filter((r) => !r.is_correct);
+
   return (
     <div className="flex w-full max-w-5xl flex-col items-center gap-8">
       <div className="flex items-center gap-2 rounded-full bg-purple-600/20 px-6 py-2">
@@ -870,6 +848,42 @@ function ScRevealedView({ state }: { state: ProjectionState }) {
                 {choice.label}
               </div>
             ))}
+        </div>
+      )}
+
+      {/* Résultats SC par joueur */}
+      {results.length > 0 && (
+        <div className="flex w-full max-w-4xl gap-6">
+          {correctPlayers.length > 0 && (
+            <div className="flex-1 rounded-xl border border-green-700/50 bg-green-900/10 p-4">
+              <div className="mb-3 flex items-center justify-center gap-2 text-green-400">
+                <CheckCircle2 className="h-5 w-5" />
+                <span className="font-semibold">Sauvé ({correctPlayers.length})</span>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2">
+                {correctPlayers.map((r, i) => (
+                  <span key={i} className="rounded-full bg-green-900/40 px-3 py-1 text-sm font-medium text-green-300">
+                    {r.pseudo}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {wrongPlayers.length > 0 && (
+            <div className="flex-1 rounded-xl border border-red-700/50 bg-red-900/10 p-4">
+              <div className="mb-3 flex items-center justify-center gap-2 text-red-400">
+                <XCircle className="h-5 w-5" />
+                <span className="font-semibold">Éliminé ({wrongPlayers.length})</span>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2">
+                {wrongPlayers.map((r, i) => (
+                  <span key={i} className="rounded-full bg-red-900/40 px-3 py-1 text-sm font-medium text-red-300">
+                    {r.pseudo} {r.is_timeout ? '(timeout)' : ''}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
