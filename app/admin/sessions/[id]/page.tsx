@@ -395,6 +395,16 @@ export default function AdminSessionDetailPage({
             </Button>
           )}
 
+          {(currentSession.status === 'in_progress' ||
+            currentSession.status === 'ended') && (
+            <Button size="sm" variant="outline" asChild>
+              <Link href={`/admin/sessions/${id}/recap`}>
+                <ClipboardList className="mr-1 h-4 w-4" />
+                Récapitulatif
+              </Link>
+            </Button>
+          )}
+
           {canEdit && (
             <Dialog open={editOpen} onOpenChange={setEditOpen}>
               <DialogTrigger asChild>

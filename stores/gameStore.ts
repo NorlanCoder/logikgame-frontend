@@ -18,6 +18,7 @@ type PlayerGamePhase =
   | 'round_intro'    // Annonce de la manche
   | 'question'       // Question affichée, réponse possible
   | 'answered'       // Réponse envoyée, en attente du résultat
+  | 'answer_revealed' // Bonne réponse affichée, en attente des résultats
   | 'result'         // Résultat affiché (correct/incorrect)
   | 'eliminated'     // Le joueur a été éliminé
   | 'round_skipped'  // Manche passée (manche 4), en attente de la suivante
@@ -28,6 +29,7 @@ type PlayerGamePhase =
   | 'second_chance_waiting' // SC lancée, joueur safe attend
   | 'second_chance'  // Question seconde chance active
   | 'sc_answered'    // Réponse SC envoyée, en attente résultat
+  | 'sc_answer_revealed' // Réponse SC révélée, en attente des résultats
   | 'sc_result'      // Résultat SC affiché
   | 'finale_choice'  // Choix finale (continuer/abandonner)
   | 'finale_result'  // Résultat des choix de la finale révélés
@@ -83,6 +85,7 @@ interface GameState {
   finaleFinalists: { session_player_id: number; pseudo: string }[] | null;
   finaleChoices: { session_player_id: number; choice: string; pseudo: string }[] | null;
   finaleScenario: string | null;
+  finaleAbandoned: boolean;
 
   // Seconde chance (Manche 3)
   secondChanceQuestion: WsSecondChanceLaunched['question'] | null;
@@ -104,6 +107,7 @@ interface GameState {
   setAnswerValue: (value: string) => void;
   markAnswered: () => void;
   setResult: (isCorrect: boolean, correctAnswer: string) => void;
+  setResultPending: (isCorrect: boolean, correctAnswer: string) => void;
   setRevealedChoices: (choices: (QuestionChoice & { is_correct: boolean })[]) => void;
   setTimer: (seconds: number) => void;
   updateJackpot: (jackpot: number, playersRemaining: number) => void;
@@ -115,6 +119,7 @@ interface GameState {
   setSecondChanceQuestion: (question: WsSecondChanceLaunched['question'], failedPlayerIds: number[], mainQuestionId: number) => void;
   markScAnswered: () => void;
   setScResult: (isCorrect: boolean, correctAnswer: string) => void;
+  setScResultPending: (isCorrect: boolean, correctAnswer: string) => void;
   setScRevealedChoices: (choices: (QuestionChoice & { is_correct: boolean })[], correctAnswer: string) => void;
   setDuelAssignments: (assignments: DuelAssignment[]) => void;
   resetQuestion: () => void;
@@ -156,6 +161,7 @@ export const useGameStore = create<GameState>((set) => ({
   finaleFinalists: null,
   finaleChoices: null,
   finaleScenario: null,
+  finaleAbandoned: false,
 
   secondChanceQuestion: null,
   mainQuestionId: null,
@@ -301,6 +307,12 @@ export const useGameStore = create<GameState>((set) => ({
     }
   },
 
+  setResultPending: (isCorrect, correctAnswer) => {
+    const state = useGameStore.getState();
+    if (state.phase === 'eliminated' || state.phase === 'game_ended') return;
+    set({ isCorrect, correctAnswer });
+  },
+
   setRevealedChoices: (choices) => set({ revealedChoices: choices }),
 
   setTimer: (seconds) => set({ timerSeconds: seconds }),
@@ -367,6 +379,12 @@ export const useGameStore = create<GameState>((set) => ({
     const state = useGameStore.getState();
     if (state.phase === 'eliminated' || state.phase === 'game_ended') return;
     set({ scIsCorrect: isCorrect, scCorrectAnswer: correctAnswer, phase: 'sc_result' });
+  },
+
+  setScResultPending: (isCorrect, correctAnswer) => {
+    const state = useGameStore.getState();
+    if (state.phase === 'eliminated' || state.phase === 'game_ended') return;
+    set({ scIsCorrect: isCorrect, scCorrectAnswer: correctAnswer });
   },
 
   setScRevealedChoices: (choices, correctAnswer) => {
@@ -444,6 +462,7 @@ export const useGameStore = create<GameState>((set) => ({
       finaleFinalists: null,
       finaleChoices: null,
       finaleScenario: null,
+      finaleAbandoned: false,
       secondChanceQuestion: null,
       mainQuestionId: null,
       duelAssignments: [],

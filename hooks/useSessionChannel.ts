@@ -7,6 +7,7 @@ import type {
   WsQuestionLaunched,
   WsQuestionClosed,
   WsAnswerRevealed,
+  WsResultsRevealed,
   WsPlayerEliminated,
   WsJackpotUpdated,
   WsRoundStarted,
@@ -15,6 +16,7 @@ import type {
   WsGameEnded,
   WsSecondChanceLaunched,
   WsSecondChanceRevealed,
+  WsScResultsRevealed,
   WsFinaleChoicesRevealed,
   WsFinaleVoteLaunched,
   WsDuelQuestionsAssigned,
@@ -49,6 +51,8 @@ export function useSessionChannel(sessionId: number | null) {
       .listen('.question.launched', (e: WsQuestionLaunched) => {
         const state = useGameStore.getState();
         if (state.phase === 'round_skipped') return;
+        // En finale, les joueurs ayant abandonné ne reçoivent pas la question
+        if (state.finaleAbandoned) return;
         state.setQuestion(e.question);
         // En duel, seul le joueur assigné lance le countdown
         const isDuel = state.currentRound?.round_type === 'duel_jackpot' || state.currentRound?.round_type === 'duel_elimination';
@@ -66,63 +70,50 @@ export function useSessionChannel(sessionId: number | null) {
         stopCountdown();
         const inDangerCount = e.in_danger_count ?? 0;
         useGameStore.setState({ inDangerCount });
-
-        // En manche 3, si le joueur a déjà reçu son résultat (phase 'result'),
-        // et qu'il y a des joueurs en danger, transitionner vers danger/safe
-        if (
-          state.currentRound?.round_type === 'second_chance' &&
-          inDangerCount > 0 &&
-          state.phase === 'result' &&
-          state.isCorrect !== null
-        ) {
-          useGameStore.setState({
-            phase: state.isCorrect === false ? 'second_chance_danger' : 'second_chance_safe',
-          });
-        }
+        // Plus de transition de phase ici — elle se fait lors du reveal
       })
       .listen('.answer.revealed', (e: WsAnswerRevealed) => {
         const state = useGameStore.getState();
         if (state.phase === 'eliminated' || state.phase === 'game_ended' || state.phase === 'round_skipped') return;
-        // Toujours marquer le reveal (même sans choices pour les questions texte/nombre)
         state.setRevealedChoices(e.choices ?? []);
-        useGameStore.setState({ correctAnswer: e.correct_answer });
+        useGameStore.setState({ correctAnswer: e.correct_answer, phase: 'answer_revealed' });
+      })
+      .listen('.results.revealed', (e: WsResultsRevealed) => {
+        void e;
+        const state = useGameStore.getState();
+        if (state.phase === 'eliminated' || state.phase === 'game_ended' || state.phase === 'round_skipped') return;
 
-        // Si le joueur a répondu mais n'a pas encore reçu son résultat (AnswerResult),
-        // déduire isCorrect depuis les données du reveal
-        if ((state.phase === 'answered' || state.phase === 'result') && state.hasAnswered) {
-          let isCorrect = state.isCorrect;
+        // Déterminer isCorrect : utiliser la valeur du store si déjà reçue via AnswerResult,
+        // sinon déduire depuis les données du reveal
+        let isCorrect = useGameStore.getState().isCorrect;
 
-          // Calculer isCorrect si pas encore déterminé
-          if (isCorrect === null) {
-            const choices = e.choices ?? [];
-            if (state.selectedChoiceId && choices.length > 0) {
-              // QCM : vérifier si le choix sélectionné est correct
-              const selectedChoice = choices.find((c: { id: number; is_correct: boolean }) => c.id === state.selectedChoiceId);
-              isCorrect = selectedChoice?.is_correct ?? false;
-            } else if (state.currentQuestion?.answer_type === 'qcm') {
-              // QCM mais pas de choix sélectionné (timeout localement)
-              isCorrect = false;
-            } else if (e.correct_answer && state.answerValue) {
-              // Texte/Nombre : comparer avec la bonne réponse
-              const normalize = (s: string) => s.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-              isCorrect = normalize(state.answerValue) === normalize(e.correct_answer);
-            } else {
-              isCorrect = false;
-            }
-            useGameStore.setState({ isCorrect });
-          }
-
-          // Transition de phase
-          if (
-            state.currentRound?.round_type === 'second_chance' &&
-            state.inDangerCount > 0
-          ) {
-            useGameStore.setState({
-              phase: isCorrect === false ? 'second_chance_danger' : 'second_chance_safe',
-            });
+        if (isCorrect === null && state.hasAnswered) {
+          const choices = useGameStore.getState().revealedChoices ?? [];
+          if (state.selectedChoiceId && choices.length > 0) {
+            const selectedChoice = choices.find((c: { id: number; is_correct: boolean }) => c.id === state.selectedChoiceId);
+            isCorrect = selectedChoice?.is_correct ?? false;
+          } else if (state.currentQuestion?.answer_type === 'qcm') {
+            isCorrect = false;
+          } else if (state.correctAnswer && state.answerValue) {
+            const normalize = (s: string) => s.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            isCorrect = normalize(state.answerValue) === normalize(state.correctAnswer);
           } else {
-            useGameStore.setState({ phase: 'result' });
+            isCorrect = false;
           }
+        }
+
+        if (isCorrect === null) isCorrect = false;
+
+        if (
+          state.currentRound?.round_type === 'second_chance' &&
+          useGameStore.getState().inDangerCount > 0
+        ) {
+          useGameStore.setState({
+            isCorrect,
+            phase: isCorrect === false ? 'second_chance_danger' : 'second_chance_safe',
+          });
+        } else {
+          useGameStore.setState({ isCorrect, phase: 'result' });
         }
       })
       .listen('.player.eliminated', (e: WsPlayerEliminated) => {
@@ -160,7 +151,9 @@ export function useSessionChannel(sessionId: number | null) {
       .listen('.finale.choices.revealed', (e: WsFinaleChoicesRevealed) => {
         const state = useGameStore.getState();
         if (state.phase === 'eliminated' || state.phase === 'game_ended') return;
-        useGameStore.setState({ finaleChoices: e.choices, finaleScenario: e.scenario, phase: 'finale_result' });
+        const myChoice = e.choices.find((c) => c.session_player_id === state.sessionPlayerId);
+        const abandoned = myChoice?.choice === 'abandon';
+        useGameStore.setState({ finaleChoices: e.choices, finaleScenario: e.scenario, finaleAbandoned: abandoned, phase: 'finale_result' });
       })
       .listen('.second_chance.launched', (e: WsSecondChanceLaunched) => {
         useGameStore.getState().setSecondChanceQuestion(
@@ -177,30 +170,40 @@ export function useSessionChannel(sessionId: number | null) {
         const state = useGameStore.getState();
         if (state.phase === 'eliminated' || state.phase === 'game_ended') return;
         state.setScRevealedChoices(e.choices ?? [], e.correct_answer);
+        // Les SC participants voient la réponse mais pas encore le résultat
+        const scParticipantPhases = ['second_chance', 'sc_answered', 'second_chance_danger'];
+        if (scParticipantPhases.includes(state.phase)) {
+          useGameStore.setState({ phase: 'sc_answer_revealed' });
+        }
+      })
+      .listen('.sc_results.revealed', (e: WsScResultsRevealed) => {
+        void e;
+        const state = useGameStore.getState();
+        if (state.phase === 'eliminated' || state.phase === 'game_ended') return;
 
-        // Si le joueur a répondu à la SC mais n'a pas reçu son résultat,
-        // déduire scIsCorrect depuis les données du reveal
-        if (state.phase === 'sc_answered' && state.hasAnswered) {
-          let scIsCorrect = state.scIsCorrect;
+        const scParticipantPhases = ['second_chance', 'sc_answered', 'second_chance_danger', 'sc_answer_revealed'];
+        if (scParticipantPhases.includes(state.phase)) {
+          let scIsCorrect = useGameStore.getState().scIsCorrect;
 
-          if (scIsCorrect === null) {
-            const choices = e.choices ?? [];
+          if (scIsCorrect === null && state.hasAnswered) {
+            const choices = useGameStore.getState().scRevealedChoices ?? [];
             if (state.selectedChoiceId && choices.length > 0) {
               const selected = choices.find((c: { id: number; is_correct: boolean }) => c.id === state.selectedChoiceId);
               scIsCorrect = selected?.is_correct ?? false;
             } else if (state.secondChanceQuestion?.answer_type === 'qcm') {
               scIsCorrect = false;
-            } else if (e.correct_answer && state.answerValue) {
+            } else if (useGameStore.getState().scCorrectAnswer && state.answerValue) {
               const normalize = (s: string) => s.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-              scIsCorrect = normalize(state.answerValue) === normalize(e.correct_answer);
+              scIsCorrect = normalize(state.answerValue) === normalize(useGameStore.getState().scCorrectAnswer!);
             } else {
               scIsCorrect = false;
             }
           }
 
+          if (scIsCorrect === null) scIsCorrect = false;
+
           useGameStore.setState({
             scIsCorrect,
-            scCorrectAnswer: e.correct_answer,
             phase: 'sc_result',
           });
         }

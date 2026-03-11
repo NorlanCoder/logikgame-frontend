@@ -356,6 +356,11 @@ export interface WsAnswerRevealed {
   choices?: (QuestionChoice & { is_correct: boolean })[];
 }
 
+export interface WsResultsRevealed {
+  question_id: number;
+  player_results: { pseudo: string; is_correct: boolean; is_timeout: boolean }[];
+}
+
 export interface WsQuestionClosed {
   question_id: number;
   answers_received: number;
@@ -459,6 +464,11 @@ export interface WsSecondChanceRevealed {
   main_question_id: number;
   correct_answer: string;
   choices?: (QuestionChoice & { is_correct: boolean })[];
+}
+
+export interface WsScResultsRevealed {
+  main_question_id: number;
+  player_results: { pseudo: string; is_correct: boolean; is_timeout: boolean }[];
 }
 
 export interface WsSecondChanceClosed {

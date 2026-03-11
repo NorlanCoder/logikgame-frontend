@@ -93,6 +93,7 @@ export default function PlayerGamePage() {
     hintText,
     playerStatus,
     capital,
+    personalJackpot,
     jackpot,
     playersRemaining,
     timerSeconds,
@@ -153,7 +154,10 @@ export default function PlayerGamePage() {
         if (data.my_status.hint_used) {
           useGameStore.setState({ hintUsed: true, hintAvailable: false });
         }
-        useGameStore.setState({ capital: data.my_status.capital });
+        useGameStore.setState({
+          capital: data.my_status.capital,
+          personalJackpot: data.my_status.personal_jackpot ?? 0,
+        });
 
         if (data.current_round) {
           setRound({
@@ -346,6 +350,12 @@ export default function PlayerGamePage() {
             <Zap className="h-4 w-4 text-yellow-400" />
             <span className="font-semibold tabular-nums">{capital}</span>
           </div>
+          {currentRound && (currentRound.round_type === 'duel_jackpot' || currentRound.round_type === 'duel_elimination') && (
+            <div className="flex items-center gap-1.5 text-sm">
+              <Trophy className="h-4 w-4 text-emerald-400" />
+              <span className="font-semibold tabular-nums text-emerald-400">{personalJackpot.toLocaleString('fr-FR')}</span>
+            </div>
+          )}
           <JackpotCounter amount={jackpot} size="sm" />
           <div className="flex items-center gap-1 text-xs text-gray-500">
             <span>{playersRemaining} en jeu</span>
@@ -417,6 +427,14 @@ export default function PlayerGamePage() {
             <h2 className="text-xl font-bold">Réponse envoyée !</h2>
             <p className="text-gray-400">En attente du résultat…</p>
           </div>
+        )}
+
+        {/* ── ANSWER REVEALED (bonne réponse affichée, en attente résultats) ── */}
+        {phase === 'answer_revealed' && (
+          <AnswerRevealedPlayerView
+            correctAnswer={correctAnswer}
+            revealedChoices={revealedChoices}
+          />
         )}
 
         {/* ── SECOND CHANCE DANGER (mauvaise réponse, en attente SC) ── */}
@@ -505,6 +523,15 @@ export default function PlayerGamePage() {
             <h2 className="text-xl font-bold">Réponse envoyée !</h2>
             <p className="text-gray-400">En attente du résultat de la seconde chance…</p>
           </div>
+        )}
+
+        {/* ── SC ANSWER REVEALED (réponse SC affichée, en attente résultats) ── */}
+        {phase === 'sc_answer_revealed' && (
+          <AnswerRevealedPlayerView
+            correctAnswer={scCorrectAnswer}
+            revealedChoices={scRevealedChoices}
+            labelPrefix="Seconde chance"
+          />
         )}
 
         {/* ── SC RESULT (résultat seconde chance) ── */}
@@ -769,6 +796,59 @@ function QuestionView({
   );
 }
 
+function AnswerRevealedPlayerView({
+  correctAnswer,
+  revealedChoices,
+  labelPrefix,
+}: {
+  correctAnswer: string | null;
+  revealedChoices: ({ id: number; label: string; is_correct: boolean })[] | null;
+  labelPrefix?: string;
+}) {
+  const prefix = labelPrefix ? `${labelPrefix} — ` : '';
+  return (
+    <div className="flex flex-col items-center gap-6 text-center">
+      <div className="flex h-24 w-24 items-center justify-center rounded-full bg-blue-600/20">
+        <Eye className="h-14 w-14 text-blue-400" />
+      </div>
+      <h2 className="text-2xl font-bold">{prefix}La bonne réponse</h2>
+
+      {correctAnswer && (
+        <p className="text-gray-400">
+          La bonne réponse est :{' '}
+          <span className="font-semibold text-green-400">{correctAnswer}</span>
+        </p>
+      )}
+
+      {revealedChoices && revealedChoices.length > 0 && (
+        <div className="grid w-full max-w-md gap-2">
+          {revealedChoices.map((c) => (
+            <div
+              key={c.id}
+              className={clsx(
+                'rounded-lg border px-4 py-2 text-sm',
+                c.is_correct
+                  ? 'border-green-600 bg-green-600/10 text-green-400'
+                  : 'border-gray-700 text-gray-500'
+              )}
+            >
+              {c.label}
+              {c.is_correct && <CheckCircle2 className="ml-2 inline h-4 w-4" />}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <p className="text-sm text-gray-500">En attente des résultats…</p>
+      <div className="flex items-center gap-2">
+        <div className="h-3 w-3 animate-bounce rounded-full bg-blue-500 [animation-delay:0ms]" />
+        <div className="h-3 w-3 animate-bounce rounded-full bg-blue-500 [animation-delay:150ms]" />
+        <div className="h-3 w-3 animate-bounce rounded-full bg-blue-500 [animation-delay:300ms]" />
+      </div>
+    </div>
+  );
+}
+
 function ResultView({
   isCorrect,
   correctAnswer,
@@ -1004,7 +1084,7 @@ function GameEndedView({
         </div>
       )}
 
-      <Button variant="outline" onClick={onLogout} className="mt-4">
+      <Button variant="outline" onClick={onLogout} className="mt-4 border-gray-600 bg-transparent text-gray-300 hover:bg-gray-800">
         <LogOut className="mr-2 h-4 w-4" />
         Quitter
       </Button>
