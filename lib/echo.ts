@@ -28,7 +28,7 @@ export function getEcho(): EchoInstance {
     forceTLS: process.env.NEXT_PUBLIC_REVERB_SCHEME === 'https',
     enabledTransports: ['ws', 'wss'],
     authorizer: (channel: { name: string }) => ({
-      authorize: (socketId: string, callback: (error: unknown, data: unknown) => void) => {
+      authorize: (socketId: string, callback: (error: Error | null, data: { auth: string; channel_data?: string } | null) => void) => {
         const playerToken = typeof window !== 'undefined' ? localStorage.getItem('player_token') : null;
         const adminToken = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null;
 

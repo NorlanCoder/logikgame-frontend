@@ -38,6 +38,7 @@ interface PlayerStatus {
   my_status: {
     status: string;
     capital: number;
+    personal_jackpot: number;
     hint_used: boolean;
   };
   session: {
@@ -755,7 +756,7 @@ function QuestionView({
       {question.answer_type !== 'qcm' && (
         <div className="flex w-full flex-col gap-2">
           <Button
-            onClick={onSubmit}
+            onClick={() => onSubmit()}
             disabled={!hasAnswer || submitting}
             className="w-full py-6 text-lg"
           >
