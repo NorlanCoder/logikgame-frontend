@@ -83,6 +83,7 @@ interface GameState {
   finaleFinalists: { session_player_id: number; pseudo: string }[] | null;
   finaleChoices: { session_player_id: number; choice: string; pseudo: string }[] | null;
   finaleScenario: string | null;
+  finaleAbandoned: boolean;
 
   // Seconde chance (Manche 3)
   secondChanceQuestion: WsSecondChanceLaunched['question'] | null;
@@ -156,6 +157,7 @@ export const useGameStore = create<GameState>((set) => ({
   finaleFinalists: null,
   finaleChoices: null,
   finaleScenario: null,
+  finaleAbandoned: false,
 
   secondChanceQuestion: null,
   mainQuestionId: null,
@@ -444,6 +446,7 @@ export const useGameStore = create<GameState>((set) => ({
       finaleFinalists: null,
       finaleChoices: null,
       finaleScenario: null,
+      finaleAbandoned: false,
       secondChanceQuestion: null,
       mainQuestionId: null,
       duelAssignments: [],

@@ -49,6 +49,8 @@ export function useSessionChannel(sessionId: number | null) {
       .listen('.question.launched', (e: WsQuestionLaunched) => {
         const state = useGameStore.getState();
         if (state.phase === 'round_skipped') return;
+        // En finale, les joueurs ayant abandonné ne reçoivent pas la question
+        if (state.finaleAbandoned) return;
         state.setQuestion(e.question);
         // En duel, seul le joueur assigné lance le countdown
         const isDuel = state.currentRound?.round_type === 'duel_jackpot' || state.currentRound?.round_type === 'duel_elimination';
@@ -160,7 +162,9 @@ export function useSessionChannel(sessionId: number | null) {
       .listen('.finale.choices.revealed', (e: WsFinaleChoicesRevealed) => {
         const state = useGameStore.getState();
         if (state.phase === 'eliminated' || state.phase === 'game_ended') return;
-        useGameStore.setState({ finaleChoices: e.choices, finaleScenario: e.scenario, phase: 'finale_result' });
+        const myChoice = e.choices.find((c) => c.session_player_id === state.sessionPlayerId);
+        const abandoned = myChoice?.choice === 'abandon';
+        useGameStore.setState({ finaleChoices: e.choices, finaleScenario: e.scenario, finaleAbandoned: abandoned, phase: 'finale_result' });
       })
       .listen('.second_chance.launched', (e: WsSecondChanceLaunched) => {
         useGameStore.getState().setSecondChanceQuestion(
