@@ -64,6 +64,7 @@ import {
   Swords,
   Crown,
   Check,
+  BarChart3,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -80,7 +81,7 @@ interface DashboardData {
   active_players_list?: { id: number; pseudo: string }[];
 }
 
-type QuestionFlowStep = 'ready' | 'launched' | 'closed' | 'revealed';
+type QuestionFlowStep = 'ready' | 'launched' | 'closed' | 'revealed' | 'results_shown';
 
 // ─── Page ────────────────────────────────────────────────────
 
@@ -100,7 +101,7 @@ export default function AdminGameMonitorPage({
   // Question en cours côté serveur
   const [activeQuestionId, setActiveQuestionId] = useState<number | null>(null);
   const [questionStep, setQuestionStep] = useState<QuestionFlowStep>('ready');
-  const [scStatusByQuestionId, setScStatusByQuestionId] = useState<Record<number, 'pending' | 'launched' | 'closed' | 'revealed'>>({}); 
+  const [scStatusByQuestionId, setScStatusByQuestionId] = useState<Record<number, 'pending' | 'launched' | 'closed' | 'revealed' | 'results_shown'>>({});
   const [timerSeconds, setTimerSeconds] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -345,6 +346,17 @@ export default function AdminGameMonitorPage({
           return prevId;
         });
       })
+      .listen('.results.revealed', () => {
+        setQuestionStep('results_shown');
+      })
+      .listen('.sc_results.revealed', () => {
+        setActiveQuestionId((prevId) => {
+          if (prevId) {
+            setScStatusByQuestionId((prev) => ({ ...prev, [prevId]: 'results_shown' }));
+          }
+          return prevId;
+        });
+      })
       .listen('.player.eliminated', (e: WsPlayerEliminated) => {
         setRecentEliminated(e.eliminated);
         setDashboard((prev) =>
@@ -491,6 +503,10 @@ export default function AdminGameMonitorPage({
     gameAction('reveal-answer');
   }
 
+  function showResults() {
+    gameAction('show-results');
+  }
+
   function nextRound() {
     confirmGameAction(
       'Manche suivante',
@@ -521,6 +537,11 @@ export default function AdminGameMonitorPage({
   async function revealSecondChanceForQuestion(questionId: number) {
     const ok = await gameAction('reveal-second-chance');
     if (ok) setScStatusByQuestionId((prev) => ({ ...prev, [questionId]: 'revealed' }));
+  }
+
+  async function showScResultsForQuestion(questionId: number) {
+    const ok = await gameAction('show-sc-results');
+    if (ok) setScStatusByQuestionId((prev) => ({ ...prev, [questionId]: 'results_shown' }));
   }
 
   function finalizeTop4() {
@@ -912,7 +933,7 @@ export default function AdminGameMonitorPage({
                               isCurrent &&
                               round.status === 'in_progress' &&
                               (questionStep === 'ready' ||
-                                questionStep === 'revealed') &&
+                                questionStep === 'results_shown') &&
                               activeQuestionId !== q.id &&
                               q.status === 'pending'
                             }
@@ -924,11 +945,16 @@ export default function AdminGameMonitorPage({
                               activeQuestionId === q.id &&
                               questionStep === 'closed'
                             }
+                            canShowResults={
+                              activeQuestionId === q.id &&
+                              questionStep === 'revealed'
+                            }
                             canLaunchSC={
                               round.round_type === 'second_chance' &&
                               isCurrent &&
                               round.status === 'in_progress' &&
                               q.status === 'revealed' &&
+                              (activeQuestionId !== q.id || questionStep === 'results_shown') &&
                               (scStatusByQuestionId[q.id] ?? q.second_chance_question?.status ?? 'pending') === 'pending'
                             }
                             canCloseSC={
@@ -943,12 +969,20 @@ export default function AdminGameMonitorPage({
                               round.status === 'in_progress' &&
                               (scStatusByQuestionId[q.id] ?? q.second_chance_question?.status ?? 'pending') === 'closed'
                             }
+                            canShowScResults={
+                              round.round_type === 'second_chance' &&
+                              isCurrent &&
+                              round.status === 'in_progress' &&
+                              (scStatusByQuestionId[q.id] ?? q.second_chance_question?.status ?? 'pending') === 'revealed'
+                            }
                             onLaunch={() => launchQuestion(q.id)}
                             onClose={closeQuestion}
                             onReveal={revealAnswer}
+                            onShowResults={showResults}
                             onLaunchSC={() => launchSecondChanceForQuestion(q.id)}
                             onCloseSC={() => closeSecondChanceForQuestion(q.id)}
                             onRevealSC={() => revealSecondChanceForQuestion(q.id)}
+                            onShowScResults={() => showScResultsForQuestion(q.id)}
                             actionLoading={actionLoading}
                           />
                         ))}
@@ -980,11 +1014,12 @@ export default function AdminGameMonitorPage({
                   {isCurrent &&
                     round.status === 'in_progress' &&
                     questions.length > 0 &&
+                    (questionStep === 'results_shown' || questionStep === 'ready') &&
                     questions.every((q) => {
                       if (q.status !== 'revealed') return false;
                       if (round.round_type === 'second_chance' && q.second_chance_question) {
                         const scStatus = scStatusByQuestionId[q.id] ?? q.second_chance_question.status;
-                        return scStatus === 'revealed' || scStatus === 'closed';
+                        return scStatus === 'results_shown' || scStatus === 'closed';
                       }
                       return true;
                     }) && (
@@ -1105,15 +1140,19 @@ function QuestionRow({
   canLaunch,
   canClose,
   canReveal,
+  canShowResults,
   canLaunchSC,
   canCloseSC,
   canRevealSC,
+  canShowScResults,
   onLaunch,
   onClose,
   onReveal,
+  onShowResults,
   onLaunchSC,
   onCloseSC,
   onRevealSC,
+  onShowScResults,
   actionLoading,
 }: {
   question: Question;
@@ -1122,15 +1161,19 @@ function QuestionRow({
   canLaunch: boolean;
   canClose: boolean;
   canReveal: boolean;
+  canShowResults: boolean;
   canLaunchSC: boolean;
   canCloseSC: boolean;
   canRevealSC: boolean;
+  canShowScResults: boolean;
   onLaunch: () => void;
   onClose: () => void;
   onReveal: () => void;
+  onShowResults: () => void;
   onLaunchSC: () => void;
   onCloseSC: () => void;
   onRevealSC: () => void;
+  onShowScResults: () => void;
   actionLoading: string | null;
 }) {
   const isDone =
@@ -1232,6 +1275,22 @@ function QuestionRow({
             Révéler
           </Button>
         )}
+        {canShowResults && (
+          <Button
+            size="sm"
+            onClick={onShowResults}
+            disabled={!!actionLoading}
+            variant="outline"
+            className="gap-1 border-emerald-500/50 text-emerald-500 hover:bg-emerald-500/10"
+          >
+            {actionLoading === 'show-results' ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <BarChart3 className="h-3.5 w-3.5" />
+            )}
+            Afficher les résultats
+          </Button>
+        )}
 
         {/* Boutons seconde chance (manche 3) */}
         {canLaunchSC && (
@@ -1281,9 +1340,25 @@ function QuestionRow({
             Révéler SC
           </Button>
         )}
+        {canShowScResults && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onShowScResults}
+            disabled={!!actionLoading}
+            className="gap-1 border-emerald-500/50 text-emerald-500 hover:bg-emerald-500/10"
+          >
+            {actionLoading === 'show-sc-results' ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <BarChart3 className="h-3.5 w-3.5" />
+            )}
+            Résultats SC
+          </Button>
+        )}
 
         {/* Badge statut si pas d'action */}
-        {!canLaunch && !canClose && !canReveal && (
+        {!canLaunch && !canClose && !canReveal && !canShowResults && (
           <Badge
             variant={
               question.status === 'revealed'

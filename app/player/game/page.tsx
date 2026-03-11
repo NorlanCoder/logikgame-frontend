@@ -419,6 +419,14 @@ export default function PlayerGamePage() {
           </div>
         )}
 
+        {/* ── ANSWER REVEALED (bonne réponse affichée, en attente résultats) ── */}
+        {phase === 'answer_revealed' && (
+          <AnswerRevealedPlayerView
+            correctAnswer={correctAnswer}
+            revealedChoices={revealedChoices}
+          />
+        )}
+
         {/* ── SECOND CHANCE DANGER (mauvaise réponse, en attente SC) ── */}
         {phase === 'second_chance_danger' && (
           <div className="flex flex-col items-center gap-4 text-center">
@@ -505,6 +513,15 @@ export default function PlayerGamePage() {
             <h2 className="text-xl font-bold">Réponse envoyée !</h2>
             <p className="text-gray-400">En attente du résultat de la seconde chance…</p>
           </div>
+        )}
+
+        {/* ── SC ANSWER REVEALED (réponse SC affichée, en attente résultats) ── */}
+        {phase === 'sc_answer_revealed' && (
+          <AnswerRevealedPlayerView
+            correctAnswer={scCorrectAnswer}
+            revealedChoices={scRevealedChoices}
+            labelPrefix="Seconde chance"
+          />
         )}
 
         {/* ── SC RESULT (résultat seconde chance) ── */}
@@ -764,6 +781,59 @@ function QuestionView({
             Passer la manche
           </Button>
         )}
+      </div>
+    </div>
+  );
+}
+
+function AnswerRevealedPlayerView({
+  correctAnswer,
+  revealedChoices,
+  labelPrefix,
+}: {
+  correctAnswer: string | null;
+  revealedChoices: ({ id: number; label: string; is_correct: boolean })[] | null;
+  labelPrefix?: string;
+}) {
+  const prefix = labelPrefix ? `${labelPrefix} — ` : '';
+  return (
+    <div className="flex flex-col items-center gap-6 text-center">
+      <div className="flex h-24 w-24 items-center justify-center rounded-full bg-blue-600/20">
+        <Eye className="h-14 w-14 text-blue-400" />
+      </div>
+      <h2 className="text-2xl font-bold">{prefix}La bonne réponse</h2>
+
+      {correctAnswer && (
+        <p className="text-gray-400">
+          La bonne réponse est :{' '}
+          <span className="font-semibold text-green-400">{correctAnswer}</span>
+        </p>
+      )}
+
+      {revealedChoices && revealedChoices.length > 0 && (
+        <div className="grid w-full max-w-md gap-2">
+          {revealedChoices.map((c) => (
+            <div
+              key={c.id}
+              className={clsx(
+                'rounded-lg border px-4 py-2 text-sm',
+                c.is_correct
+                  ? 'border-green-600 bg-green-600/10 text-green-400'
+                  : 'border-gray-700 text-gray-500'
+              )}
+            >
+              {c.label}
+              {c.is_correct && <CheckCircle2 className="ml-2 inline h-4 w-4" />}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <p className="text-sm text-gray-500">En attente des résultats…</p>
+      <div className="flex items-center gap-2">
+        <div className="h-3 w-3 animate-bounce rounded-full bg-blue-500 [animation-delay:0ms]" />
+        <div className="h-3 w-3 animate-bounce rounded-full bg-blue-500 [animation-delay:150ms]" />
+        <div className="h-3 w-3 animate-bounce rounded-full bg-blue-500 [animation-delay:300ms]" />
       </div>
     </div>
   );

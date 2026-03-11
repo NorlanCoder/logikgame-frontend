@@ -10,6 +10,7 @@ import type {
   QuestionChoice,
   WsQuestionLaunched,
   WsAnswerRevealed,
+  WsResultsRevealed,
   WsQuestionClosed,
   WsPlayerEliminated,
   WsJackpotUpdated,
@@ -20,6 +21,7 @@ import type {
   WsSecondChanceLaunched,
   WsSecondChanceRevealed,
   WsSecondChanceClosed,
+  WsScResultsRevealed,
   WsTop4Finalized,
   WsDuelQuestionsAssigned,
   WsFinaleVoteLaunched,
@@ -56,7 +58,7 @@ interface ProjectionState {
   questionStats: { answers_received: number; correct_count: number; eliminated_count: number; in_danger_count: number; in_danger_players: string[] } | null;
   playerResults: { pseudo: string; is_correct: boolean; is_timeout: boolean }[];
   scPlayerResults: { pseudo: string; is_correct: boolean; is_timeout: boolean }[];
-  phase: 'waiting' | 'round_intro' | 'question' | 'question_closed' | 'answer_revealed' | 'eliminated' | 'game_ended' | 'sc_question' | 'sc_closed' | 'sc_revealed' | 'top4_finalized' | 'duel_assigned' | 'finale_vote' | 'finale_choices_revealed';
+  phase: 'waiting' | 'round_intro' | 'question' | 'question_closed' | 'answer_revealed' | 'results_shown' | 'eliminated' | 'game_ended' | 'sc_question' | 'sc_closed' | 'sc_revealed' | 'sc_results_shown' | 'top4_finalized' | 'duel_assigned' | 'finale_vote' | 'finale_choices_revealed';
   top4Rankings: { pseudo: string; correct_answers_count: number; total_response_time_ms: number; rank: number; is_qualified: boolean }[];
   winners: { pseudo: string; final_gain: number }[];
   scQuestion: {
@@ -293,8 +295,14 @@ export default function ProjectionPage({
           ...prev,
           correctAnswer: e.correct_answer,
           revealedChoices: e.choices ?? null,
-          playerResults: e.player_results ?? [],
           phase: 'answer_revealed',
+        }));
+      })
+      .listen('.results.revealed', (e: WsResultsRevealed) => {
+        setState((prev) => ({
+          ...prev,
+          playerResults: e.player_results ?? [],
+          phase: 'results_shown',
         }));
       })
       .listen('.player.eliminated', (e: WsPlayerEliminated) => {
@@ -373,8 +381,14 @@ export default function ProjectionPage({
           ...prev,
           scCorrectAnswer: e.correct_answer,
           scRevealedChoices: e.choices ?? null,
-          scPlayerResults: e.player_results ?? [],
           phase: 'sc_revealed',
+        }));
+      })
+      .listen('.sc_results.revealed', (e: WsScResultsRevealed) => {
+        setState((prev) => ({
+          ...prev,
+          scPlayerResults: e.player_results ?? [],
+          phase: 'sc_results_shown',
         }));
       })
       .listen('.top4.finalized', (e: WsTop4Finalized) => {
@@ -464,11 +478,13 @@ export default function ProjectionPage({
         )}
         {state.phase === 'question_closed' && <QuestionClosedView state={state} />}
         {state.phase === 'answer_revealed' && <AnswerRevealedView state={state} />}
+        {state.phase === 'results_shown' && <ResultsShownView state={state} />}
         {state.phase === 'sc_question' && (
           <ScQuestionView state={state} timerSeconds={timerSeconds} timerTotal={timerTotal} />
         )}
         {state.phase === 'sc_closed' && <ScClosedView state={state} />}
         {state.phase === 'sc_revealed' && <ScRevealedView state={state} />}
+        {state.phase === 'sc_results_shown' && <ScResultsShownView state={state} />}
         {state.phase === 'top4_finalized' && <Top4FinalizedView state={state} />}
         {state.phase === 'finale_vote' && <FinaleVoteView state={state} />}
         {state.phase === 'finale_choices_revealed' && <FinaleChoicesRevealedView state={state} />}
@@ -588,11 +604,11 @@ function QuestionClosedView({ state }: { state: ProjectionState }) {
   const stats = state.questionStats;
 
   return (
-    <div className="flex flex-col items-center gap-8 text-center">
+    <div className="flex flex-col items-center gap-8 text-center animate-in fade-in duration-700">
       {q && <h2 className="text-3xl font-bold">{q.text}</h2>}
       <div className="rounded-2xl bg-gray-900/60 p-8">
-        <Zap className="mx-auto mb-4 h-12 w-12 text-yellow-400" />
-        <p className="text-2xl font-bold">Question terminée</p>
+        <Loader2 className="mx-auto mb-4 h-12 w-12 animate-spin text-yellow-400" />
+        <p className="text-2xl font-bold">Analyse des résultats…</p>
         <p className="mt-2 text-lg text-gray-400">En attente de la révélation…</p>
         {stats && (
           <div className="mt-4 flex gap-8 text-lg">
@@ -609,13 +625,56 @@ function QuestionClosedView({ state }: { state: ProjectionState }) {
 
 function AnswerRevealedView({ state }: { state: ProjectionState }) {
   const q = state.currentQuestion;
+
+  return (
+    <div className="flex w-full max-w-5xl flex-col items-center gap-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      {q && <h2 className="text-center text-3xl font-bold">{q.text}</h2>}
+
+      {/* Bonne réponse texte */}
+      {state.correctAnswer && (
+        <div className="flex items-center gap-3 rounded-xl bg-green-900/30 px-6 py-4 text-2xl font-bold text-green-400">
+          <CheckCircle2 className="h-8 w-8" />
+          {state.correctAnswer}
+        </div>
+      )}
+
+      {/* Choix révélés */}
+      {state.revealedChoices && (
+        <div className="grid w-full grid-cols-2 gap-4">
+          {state.revealedChoices
+            .sort((a, b) => a.display_order - b.display_order)
+            .map((choice) => (
+              <div
+                key={choice.id}
+                className={`flex items-center justify-center gap-3 rounded-xl border-2 px-6 py-5 text-center text-2xl font-semibold ${
+                  choice.is_correct
+                    ? 'border-green-500 bg-green-900/30 text-green-300'
+                    : 'border-red-500/50 bg-red-900/20 text-red-400/70'
+                }`}
+              >
+                {choice.is_correct ? (
+                  <CheckCircle2 className="h-6 w-6 shrink-0" />
+                ) : (
+                  <XCircle className="h-6 w-6 shrink-0" />
+                )}
+                {choice.label}
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ResultsShownView({ state }: { state: ProjectionState }) {
+  const q = state.currentQuestion;
   const stats = state.questionStats;
   const results = state.playerResults;
   const correctPlayers = results.filter((r) => r.is_correct);
   const wrongPlayers = results.filter((r) => !r.is_correct);
 
   return (
-    <div className="flex w-full max-w-5xl flex-col items-center gap-8">
+    <div className="flex w-full max-w-5xl flex-col items-center gap-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
       {q && <h2 className="text-center text-3xl font-bold">{q.text}</h2>}
 
       {/* Bonne réponse texte */}
@@ -788,15 +847,15 @@ function ScClosedView({ state }: { state: ProjectionState }) {
   const q = state.scQuestion;
 
   return (
-    <div className="flex flex-col items-center gap-8 text-center">
+    <div className="flex flex-col items-center gap-8 text-center animate-in fade-in duration-700">
       <div className="flex items-center gap-2 rounded-full bg-purple-600/20 px-6 py-2">
         <Shield className="h-5 w-5 text-purple-400" />
         <span className="text-lg font-semibold text-purple-400">Seconde Chance</span>
       </div>
       {q && <h2 className="text-3xl font-bold">{q.text}</h2>}
       <div className="rounded-2xl bg-gray-900/60 p-8">
-        <Zap className="mx-auto mb-4 h-12 w-12 text-purple-400" />
-        <p className="text-2xl font-bold">Seconde chance terminée</p>
+        <Loader2 className="mx-auto mb-4 h-12 w-12 animate-spin text-purple-400" />
+        <p className="text-2xl font-bold">Analyse des résultats…</p>
         <p className="mt-2 text-lg text-gray-400">En attente de la révélation…</p>
       </div>
     </div>
@@ -805,12 +864,60 @@ function ScClosedView({ state }: { state: ProjectionState }) {
 
 function ScRevealedView({ state }: { state: ProjectionState }) {
   const q = state.scQuestion;
+
+  return (
+    <div className="flex w-full max-w-5xl flex-col items-center gap-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <div className="flex items-center gap-2 rounded-full bg-purple-600/20 px-6 py-2">
+        <Shield className="h-5 w-5 text-purple-400" />
+        <span className="text-lg font-semibold text-purple-400">Seconde Chance — Réponse</span>
+      </div>
+
+      {q && <h2 className="text-center text-3xl font-bold">{q.text}</h2>}
+
+      {/* Bonne réponse texte */}
+      {state.scCorrectAnswer && (
+        <div className="flex items-center gap-3 rounded-xl bg-green-900/30 px-6 py-4 text-2xl font-bold text-green-400">
+          <CheckCircle2 className="h-8 w-8" />
+          {state.scCorrectAnswer}
+        </div>
+      )}
+
+      {/* Choix révélés */}
+      {state.scRevealedChoices && (
+        <div className="grid w-full grid-cols-2 gap-4">
+          {state.scRevealedChoices
+            .sort((a, b) => a.display_order - b.display_order)
+            .map((choice) => (
+              <div
+                key={choice.id}
+                className={`flex items-center justify-center gap-3 rounded-xl border-2 px-6 py-5 text-center text-2xl font-semibold ${
+                  choice.is_correct
+                    ? 'border-green-500 bg-green-900/30 text-green-300'
+                    : 'border-red-500/50 bg-red-900/20 text-red-400/70'
+                }`}
+              >
+                {choice.is_correct ? (
+                  <CheckCircle2 className="h-6 w-6 shrink-0" />
+                ) : (
+                  <XCircle className="h-6 w-6 shrink-0" />
+                )}
+                {choice.label}
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ScResultsShownView({ state }: { state: ProjectionState }) {
+  const q = state.scQuestion;
   const results = state.scPlayerResults;
   const correctPlayers = results.filter((r) => r.is_correct);
   const wrongPlayers = results.filter((r) => !r.is_correct);
 
   return (
-    <div className="flex w-full max-w-5xl flex-col items-center gap-8">
+    <div className="flex w-full max-w-5xl flex-col items-center gap-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <div className="flex items-center gap-2 rounded-full bg-purple-600/20 px-6 py-2">
         <Shield className="h-5 w-5 text-purple-400" />
         <span className="text-lg font-semibold text-purple-400">Seconde Chance — Résultat</span>

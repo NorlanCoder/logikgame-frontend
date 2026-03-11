@@ -18,6 +18,7 @@ type PlayerGamePhase =
   | 'round_intro'    // Annonce de la manche
   | 'question'       // Question affichée, réponse possible
   | 'answered'       // Réponse envoyée, en attente du résultat
+  | 'answer_revealed' // Bonne réponse affichée, en attente des résultats
   | 'result'         // Résultat affiché (correct/incorrect)
   | 'eliminated'     // Le joueur a été éliminé
   | 'round_skipped'  // Manche passée (manche 4), en attente de la suivante
@@ -28,6 +29,7 @@ type PlayerGamePhase =
   | 'second_chance_waiting' // SC lancée, joueur safe attend
   | 'second_chance'  // Question seconde chance active
   | 'sc_answered'    // Réponse SC envoyée, en attente résultat
+  | 'sc_answer_revealed' // Réponse SC révélée, en attente des résultats
   | 'sc_result'      // Résultat SC affiché
   | 'finale_choice'  // Choix finale (continuer/abandonner)
   | 'finale_result'  // Résultat des choix de la finale révélés
