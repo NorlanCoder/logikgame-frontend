@@ -658,7 +658,6 @@ function AnswerRevealedView({ state }: { state: ProjectionState }) {
 }
 
 function ResultsShownView({ state }: { state: ProjectionState }) {
-  const q = state.currentQuestion;
   const stats = state.questionStats;
   const results = state.playerResults;
   const correctPlayers = results.filter((r) => r.is_correct);
@@ -666,40 +665,7 @@ function ResultsShownView({ state }: { state: ProjectionState }) {
 
   return (
     <div className="flex w-full max-w-5xl flex-col items-center gap-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      {q && <h2 className="text-center text-3xl font-bold">{q.text}</h2>}
-
-      {/* Bonne réponse texte */}
-      {state.correctAnswer && (
-        <div className="flex items-center gap-3 rounded-xl bg-green-900/30 px-6 py-4 text-2xl font-bold text-green-400">
-          <CheckCircle2 className="h-8 w-8" />
-          {state.correctAnswer}
-        </div>
-      )}
-
-      {/* Choix révélés */}
-      {state.revealedChoices && (
-        <div className="grid w-full grid-cols-2 gap-4">
-          {state.revealedChoices
-            .sort((a, b) => a.display_order - b.display_order)
-            .map((choice) => (
-              <div
-                key={choice.id}
-                className={`flex items-center justify-center gap-3 rounded-xl border-2 px-6 py-5 text-center text-2xl font-semibold ${
-                  choice.is_correct
-                    ? 'border-green-500 bg-green-900/30 text-green-300'
-                    : 'border-red-500/50 bg-red-900/20 text-red-400/70'
-                }`}
-              >
-                {choice.is_correct ? (
-                  <CheckCircle2 className="h-6 w-6 shrink-0" />
-                ) : (
-                  <XCircle className="h-6 w-6 shrink-0" />
-                )}
-                {choice.label}
-              </div>
-            ))}
-        </div>
-      )}
+      <h2 className="text-center text-3xl font-bold">Résultats</h2>
 
       {/* Stats */}
       {stats && (
@@ -902,7 +868,6 @@ function ScRevealedView({ state }: { state: ProjectionState }) {
 }
 
 function ScResultsShownView({ state }: { state: ProjectionState }) {
-  const q = state.scQuestion;
   const results = state.scPlayerResults;
   const correctPlayers = results.filter((r) => r.is_correct);
   const wrongPlayers = results.filter((r) => !r.is_correct);
@@ -911,43 +876,8 @@ function ScResultsShownView({ state }: { state: ProjectionState }) {
     <div className="flex w-full max-w-5xl flex-col items-center gap-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <div className="flex items-center gap-2 rounded-full bg-purple-600/20 px-6 py-2">
         <Shield className="h-5 w-5 text-purple-400" />
-        <span className="text-lg font-semibold text-purple-400">Seconde Chance — Résultat</span>
+        <span className="text-lg font-semibold text-purple-400">Seconde Chance — Résultats</span>
       </div>
-
-      {q && <h2 className="text-center text-3xl font-bold">{q.text}</h2>}
-
-      {/* Bonne réponse texte */}
-      {state.scCorrectAnswer && (
-        <div className="flex items-center gap-3 rounded-xl bg-green-900/30 px-6 py-4 text-2xl font-bold text-green-400">
-          <CheckCircle2 className="h-8 w-8" />
-          {state.scCorrectAnswer}
-        </div>
-      )}
-
-      {/* Choix révélés */}
-      {state.scRevealedChoices && (
-        <div className="grid w-full grid-cols-2 gap-4">
-          {state.scRevealedChoices
-            .sort((a, b) => a.display_order - b.display_order)
-            .map((choice) => (
-              <div
-                key={choice.id}
-                className={`flex items-center justify-center gap-3 rounded-xl border-2 px-6 py-5 text-center text-2xl font-semibold ${
-                  choice.is_correct
-                    ? 'border-green-500 bg-green-900/30 text-green-300'
-                    : 'border-red-500/50 bg-red-900/20 text-red-400/70'
-                }`}
-              >
-                {choice.is_correct ? (
-                  <CheckCircle2 className="h-6 w-6 shrink-0" />
-                ) : (
-                  <XCircle className="h-6 w-6 shrink-0" />
-                )}
-                {choice.label}
-              </div>
-            ))}
-        </div>
-      )}
 
       {/* Résultats SC par joueur */}
       {results.length > 0 && (
