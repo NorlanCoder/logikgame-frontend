@@ -601,7 +601,6 @@ function QuestionView({
 
 function QuestionClosedView({ state }: { state: ProjectionState }) {
   const q = state.currentQuestion;
-  const stats = state.questionStats;
 
   return (
     <div className="flex flex-col items-center gap-8 text-center animate-in fade-in duration-700">
@@ -610,27 +609,19 @@ function QuestionClosedView({ state }: { state: ProjectionState }) {
         <Loader2 className="mx-auto mb-4 h-12 w-12 animate-spin text-yellow-400" />
         <p className="text-2xl font-bold">Analyse des résultats…</p>
         <p className="mt-2 text-lg text-gray-400">En attente de la révélation…</p>
-        {stats && (
-          <div className="mt-4 flex gap-8 text-lg">
-            <div>
-              <span className="text-gray-400">Réponses : </span>
-              <span className="font-bold">{stats.answers_received}</span>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
 }
 
 function AnswerRevealedView({ state }: { state: ProjectionState }) {
-  const q = state.currentQuestion;
-
   return (
     <div className="flex w-full max-w-5xl flex-col items-center gap-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      {q && <h2 className="text-center text-3xl font-bold">{q.text}</h2>}
+      {state.correctAnswer && (
+        <h2 className="text-center text-3xl font-bold">La réponse est {state.correctAnswer}</h2>
+      )}
 
-      {/* Bonne réponse texte */}
+      {/* Bonne réponse badge */}
       {state.correctAnswer && (
         <div className="flex items-center gap-3 rounded-xl bg-green-900/30 px-6 py-4 text-2xl font-bold text-green-400">
           <CheckCircle2 className="h-8 w-8" />
