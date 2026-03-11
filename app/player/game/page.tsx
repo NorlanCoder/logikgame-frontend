@@ -93,6 +93,7 @@ export default function PlayerGamePage() {
     hintText,
     playerStatus,
     capital,
+    personalJackpot,
     jackpot,
     playersRemaining,
     timerSeconds,
@@ -153,7 +154,10 @@ export default function PlayerGamePage() {
         if (data.my_status.hint_used) {
           useGameStore.setState({ hintUsed: true, hintAvailable: false });
         }
-        useGameStore.setState({ capital: data.my_status.capital });
+        useGameStore.setState({
+          capital: data.my_status.capital,
+          personalJackpot: data.my_status.personal_jackpot ?? 0,
+        });
 
         if (data.current_round) {
           setRound({
@@ -346,6 +350,12 @@ export default function PlayerGamePage() {
             <Zap className="h-4 w-4 text-yellow-400" />
             <span className="font-semibold tabular-nums">{capital}</span>
           </div>
+          {currentRound && (currentRound.round_type === 'duel_jackpot' || currentRound.round_type === 'duel_elimination') && (
+            <div className="flex items-center gap-1.5 text-sm">
+              <Trophy className="h-4 w-4 text-emerald-400" />
+              <span className="font-semibold tabular-nums text-emerald-400">{personalJackpot.toLocaleString('fr-FR')}</span>
+            </div>
+          )}
           <JackpotCounter amount={jackpot} size="sm" />
           <div className="flex items-center gap-1 text-xs text-gray-500">
             <span>{playersRemaining} en jeu</span>
