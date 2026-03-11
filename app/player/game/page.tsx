@@ -1004,7 +1004,7 @@ function GameEndedView({
         </div>
       )}
 
-      <Button variant="outline" onClick={onLogout} className="mt-4">
+      <Button variant="outline" onClick={onLogout} className="mt-4 border-gray-600 bg-transparent text-gray-300 hover:bg-gray-800">
         <LogOut className="mr-2 h-4 w-4" />
         Quitter
       </Button>
