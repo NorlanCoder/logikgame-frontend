@@ -63,6 +63,7 @@ import {
   Crosshair,
   Swords,
   Crown,
+  Check,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -173,6 +174,12 @@ export default function AdminGameMonitorPage({
   const [duelTurnConfigured, setDuelTurnConfigured] = useState(false);
   const [duelNextPlayer, setDuelNextPlayer] = useState<{ id: number; pseudo: string } | null>(null);
   const [activePlayers, setActivePlayers] = useState<{ id: number; pseudo: string }[]>([]);
+  const [duelAssignments, setDuelAssignments] = useState<{ session_player_id: number; pseudo: string; turn_order: number; question_id: number }[]>([]);
+
+  // Finale (manche 8)
+  const [finaleVoteLaunched, setFinaleVoteLaunched] = useState(false);
+  const [finaleFinalists, setFinaleFinalists] = useState<{ session_player_id: number; pseudo: string }[]>([]);
+  const [finaleChoicesRevealed, setFinaleChoicesRevealed] = useState(false);
 
   // ─── Fetch initial ──────────────────────────────────────────
 
@@ -321,7 +328,20 @@ export default function AdminGameMonitorPage({
       .listen('.answer.revealed', () => {
         setQuestionStep('revealed');
         setActiveQuestionId((prevId) => {
-          if (prevId) updateQuestionStatus(prevId, 'revealed');
+          if (prevId) {
+            updateQuestionStatus(prevId, 'revealed');
+            // En duel, avancer au prochain joueur
+            setDuelAssignments((assignments) => {
+              if (assignments.length > 0) {
+                const currentAssignment = assignments.find(a => a.question_id === prevId);
+                if (currentAssignment) {
+                  const nextAssignment = assignments.find(a => a.turn_order === currentAssignment.turn_order + 1);
+                  setDuelNextPlayer(nextAssignment ? { id: nextAssignment.session_player_id, pseudo: nextAssignment.pseudo } : null);
+                }
+              }
+              return assignments;
+            });
+          }
           return prevId;
         });
       })
@@ -362,6 +382,10 @@ export default function AdminGameMonitorPage({
         );
         setActiveQuestionId(null);
         setQuestionStep('ready');
+        // Reset duel state
+        setDuelTurnConfigured(false);
+        setDuelNextPlayer(null);
+        setDuelAssignments([]);
         // Recharger les rounds
         api
           .get<{ data: SessionRound[] }>(
@@ -440,8 +464,21 @@ export default function AdminGameMonitorPage({
   function launchQuestion(questionId: number) {
     const isDuel = dashboard?.current_round?.round_type === 'duel_jackpot' || dashboard?.current_round?.round_type === 'duel_elimination';
     const body: Record<string, unknown> = { question_id: questionId };
-    if (isDuel && duelNextPlayer) {
-      body.assigned_player_id = duelNextPlayer.id;
+    if (isDuel) {
+      // Trouver le joueur assigné dans les assignments
+      const assignment = duelAssignments.find(a => a.question_id === questionId);
+      if (assignment) {
+        body.assigned_player_id = assignment.session_player_id;
+        setDuelNextPlayer({ id: assignment.session_player_id, pseudo: assignment.pseudo });
+        // Préparer le prochain joueur
+        const nextAssignment = duelAssignments.find(a => a.turn_order === assignment.turn_order + 1);
+        if (!nextAssignment) {
+          // Dernier tour, marquer comme terminé après lancement
+          setTimeout(() => setDuelNextPlayer(null), 500);
+        }
+      } else if (duelNextPlayer) {
+        body.assigned_player_id = duelNextPlayer.id;
+      }
     }
     gameAction('launch-question', body);
   }
@@ -507,8 +544,26 @@ export default function AdminGameMonitorPage({
     );
   }
 
+  async function launchFinaleVote() {
+    setActionLoading('launch-finale-vote');
+    try {
+      const res = await api.post<{ finalists: { session_player_id: number; pseudo: string }[] }>(
+        `/admin/sessions/${sessionId}/game/launch-finale-vote`
+      );
+      setFinaleVoteLaunched(true);
+      setFinaleFinalists(res.data.finalists);
+      toast.success('Vote de la finale lancé');
+    } catch (err: unknown) {
+      const apiErr = (err as { response?: { data?: { message?: string } } }).response?.data;
+      toast.error(apiErr?.message ?? 'Erreur: launch-finale-vote');
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
   function revealFinaleChoices() {
     gameAction('reveal-finale-choices');
+    setFinaleChoicesRevealed(true);
   }
 
   function resolveFinale() {
@@ -520,42 +575,25 @@ export default function AdminGameMonitorPage({
   }
 
   // Duels
-  async function setupDuelTurnOrder() {
-    if (activePlayers.length < 2) {
-      toast.error('Il faut au moins 2 joueurs actifs pour configurer les duels.');
-      return;
-    }
-    setActionLoading('setup-turn-order');
+  async function assignDuelQuestions() {
+    setActionLoading('assign-duel-questions');
     try {
-      await api.post(`/admin/sessions/${sessionId}/game/setup-turn-order`, {
-        player_order: activePlayers.map((p) => p.id),
-      });
+      const res = await api.post<{ assignments: { session_player_id: number; pseudo: string; turn_order: number; question_id: number }[] }>(
+        `/admin/sessions/${sessionId}/game/assign-duel-questions`
+      );
+      setDuelAssignments(res.data.assignments);
       setDuelTurnConfigured(true);
-      toast.success('Ordre de passage configuré.');
-      await fetchDuelNextTurn();
+      // Définir le premier joueur comme prochain
+      const first = res.data.assignments.find(a => a.turn_order === 1);
+      if (first) {
+        setDuelNextPlayer({ id: first.session_player_id, pseudo: first.pseudo });
+      }
+      toast.success('Questions attribuées aux joueurs.');
     } catch (err: unknown) {
       const apiErr = (err as { response?: { data?: { message?: string } } }).response?.data;
-      toast.error(apiErr?.message ?? 'Erreur: setup-turn-order');
+      toast.error(apiErr?.message ?? 'Erreur: assign-duel-questions');
     } finally {
       setActionLoading(null);
-    }
-  }
-
-  async function fetchDuelNextTurn() {
-    try {
-      const res = await api.get<{ next_player_id?: number; finished?: boolean; active_players_count?: number }>(
-        `/admin/sessions/${sessionId}/game/next-turn`
-      );
-      if (res.data.finished) {
-        setDuelNextPlayer(null);
-        toast.info('Plus de joueurs actifs dans le duel.');
-      } else if (res.data.next_player_id) {
-        const player = activePlayers.find((p) => p.id === res.data.next_player_id);
-        setDuelNextPlayer(player ?? { id: res.data.next_player_id, pseudo: `Joueur #${res.data.next_player_id}` });
-      }
-    } catch (err: unknown) {
-      const apiErr = (err as { response?: { data?: { message?: string } } }).response?.data;
-      toast.error(apiErr?.message ?? 'Erreur: next-turn');
     }
   }
 
@@ -923,13 +961,18 @@ export default function AdminGameMonitorPage({
                       roundType={round.round_type}
                       actionLoading={actionLoading}
                       onFinalizeTop4={finalizeTop4}
+                      onLaunchFinaleVote={launchFinaleVote}
                       onRevealFinaleChoices={revealFinaleChoices}
                       onResolveFinale={resolveFinale}
+                      finaleVoteLaunched={finaleVoteLaunched}
+                      finaleFinalists={finaleFinalists}
+                      finaleChoicesRevealed={finaleChoicesRevealed}
                       top4Rankings={top4Rankings}
-                      onSetupTurnOrder={setupDuelTurnOrder}
-                      onFetchNextTurn={fetchDuelNextTurn}
+                      onAssignDuelQuestions={assignDuelQuestions}
                       duelTurnConfigured={duelTurnConfigured}
                       duelNextPlayer={duelNextPlayer}
+                      duelAssignments={duelAssignments}
+                      questions={questions}
                     />
                   )}
 
@@ -1320,24 +1363,34 @@ function SpecialRoundActions({
   roundType,
   actionLoading,
   onFinalizeTop4,
+  onLaunchFinaleVote,
   onRevealFinaleChoices,
   onResolveFinale,
+  finaleVoteLaunched,
+  finaleFinalists,
+  finaleChoicesRevealed,
   top4Rankings,
-  onSetupTurnOrder,
-  onFetchNextTurn,
+  onAssignDuelQuestions,
   duelTurnConfigured,
   duelNextPlayer,
+  duelAssignments,
+  questions,
 }: {
   roundType: string;
   actionLoading: string | null;
   onFinalizeTop4: () => void;
+  onLaunchFinaleVote: () => void;
   onRevealFinaleChoices: () => void;
   onResolveFinale: () => void;
+  finaleVoteLaunched: boolean;
+  finaleFinalists: { session_player_id: number; pseudo: string }[];
+  finaleChoicesRevealed: boolean;
   top4Rankings: { pseudo: string; correct_answers_count: number; total_response_time_ms: number; rank: number; is_qualified: boolean }[];
-  onSetupTurnOrder: () => void;
-  onFetchNextTurn: () => void;
+  onAssignDuelQuestions: () => void;
   duelTurnConfigured: boolean;
   duelNextPlayer: { id: number; pseudo: string } | null;
+  duelAssignments: { session_player_id: number; pseudo: string; turn_order: number; question_id: number }[];
+  questions: Question[];
 }) {
   // Afficher les actions spéciales uniquement pour les manches concernées
   if (
@@ -1414,39 +1467,64 @@ function SpecialRoundActions({
               {!duelTurnConfigured && (
                 <Button
                   size="sm"
-                  onClick={onSetupTurnOrder}
+                  onClick={onAssignDuelQuestions}
                   disabled={!!actionLoading}
                   className="gap-1 bg-amber-600 hover:bg-amber-700"
                 >
-                  {actionLoading === 'setup-turn-order' ? (
+                  {actionLoading === 'assign-duel-questions' ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
                     <Swords className="h-3.5 w-3.5" />
                   )}
-                  Configurer ordre de passage
-                </Button>
-              )}
-              {duelTurnConfigured && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={onFetchNextTurn}
-                  disabled={!!actionLoading}
-                  className="gap-1"
-                >
-                  <Users className="h-3.5 w-3.5" />
-                  Rafraîchir tour
+                  Attribuer questions
                 </Button>
               )}
             </div>
-            {duelNextPlayer && (
-              <div className="flex items-center gap-2 rounded-lg border border-amber-600/30 bg-amber-600/10 px-4 py-2">
-                <Swords className="h-4 w-4 text-amber-400" />
-                <span className="text-sm font-medium text-amber-300">
-                  Prochain joueur : <span className="font-bold">{duelNextPlayer.pseudo}</span>
-                </span>
-              </div>
-            )}
+            {duelAssignments.length > 0 && (() => {
+              const questionStatusMap = new Map(questions.map(q => [q.id, q.status]));
+              return (
+                <div className="space-y-1.5">
+                  <p className="text-sm font-semibold text-muted-foreground">Ordre de passage</p>
+                  {duelAssignments.map((a) => {
+                    const qStatus = questionStatusMap.get(a.question_id);
+                    const isPlayed = qStatus === 'revealed';
+                    const isPlaying = duelNextPlayer?.id === a.session_player_id;
+                    return (
+                      <div
+                        key={a.turn_order}
+                        className={clsx(
+                          'flex items-center justify-between rounded-lg px-3 py-2 text-sm border',
+                          isPlaying
+                            ? 'border-amber-600/50 bg-amber-600/10'
+                            : isPlayed
+                              ? 'border-green-600/50 bg-green-600/10'
+                              : 'border-border bg-muted/30'
+                        )}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className={clsx(
+                            'flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold',
+                            isPlayed ? 'bg-green-600' : 'bg-amber-600'
+                          )}>
+                            {isPlayed ? <Check className="h-3.5 w-3.5" /> : a.turn_order}
+                          </span>
+                          <span className="font-medium">{a.pseudo}</span>
+                        </div>
+                        {isPlaying && (
+                          <Badge variant="outline" className="border-amber-600 text-amber-400 text-xs">En cours</Badge>
+                        )}
+                        {isPlayed && (
+                          <Badge variant="outline" className="border-green-600 text-green-400 text-xs">Passé</Badge>
+                        )}
+                        {!isPlaying && !isPlayed && (
+                          <Badge variant="outline" className="border-muted-foreground text-muted-foreground text-xs">En attente</Badge>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
             {duelTurnConfigured && !duelNextPlayer && (
               <div className="rounded-lg border border-green-600/30 bg-green-600/10 px-4 py-2 text-sm text-green-300">
                 Tous les joueurs ont joué.
@@ -1457,34 +1535,78 @@ function SpecialRoundActions({
 
         {/* Finale (manche 8) */}
         {roundType === 'finale' && (
-          <>
-            <Button
-              size="sm"
-              onClick={onRevealFinaleChoices}
-              disabled={!!actionLoading}
-              className="gap-1"
-            >
-              {actionLoading === 'reveal-finale-choices' ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Eye className="h-3.5 w-3.5" />
+          <div className="flex w-full flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Étape 1 : Lancer le vote */}
+              {!finaleVoteLaunched && (
+                <Button
+                  size="sm"
+                  onClick={onLaunchFinaleVote}
+                  disabled={!!actionLoading}
+                  className="gap-1 bg-purple-600 hover:bg-purple-700"
+                >
+                  {actionLoading === 'launch-finale-vote' ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Users className="h-3.5 w-3.5" />
+                  )}
+                  Lancer le vote
+                </Button>
               )}
-              Révéler les choix
-            </Button>
-            <Button
-              size="sm"
-              onClick={onResolveFinale}
-              disabled={!!actionLoading}
-              className="gap-1 bg-yellow-600 hover:bg-yellow-700"
-            >
-              {actionLoading === 'resolve-finale' ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Crown className="h-3.5 w-3.5" />
+
+              {/* Étape 2 : Révéler les choix (après vote lancé) */}
+              {finaleVoteLaunched && !finaleChoicesRevealed && (
+                <Button
+                  size="sm"
+                  onClick={onRevealFinaleChoices}
+                  disabled={!!actionLoading}
+                  className="gap-1"
+                >
+                  {actionLoading === 'reveal-finale-choices' ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Eye className="h-3.5 w-3.5" />
+                  )}
+                  Révéler les choix
+                </Button>
               )}
-              Résoudre la finale
-            </Button>
-          </>
+
+              {/* Étape 3 : Résoudre la finale (après révélation) */}
+              {finaleChoicesRevealed && (
+                <Button
+                  size="sm"
+                  onClick={onResolveFinale}
+                  disabled={!!actionLoading}
+                  className="gap-1 bg-yellow-600 hover:bg-yellow-700"
+                >
+                  {actionLoading === 'resolve-finale' ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Crown className="h-3.5 w-3.5" />
+                  )}
+                  Résoudre la finale
+                </Button>
+              )}
+            </div>
+
+            {/* Liste des finalistes */}
+            {finaleVoteLaunched && finaleFinalists.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-sm font-semibold text-muted-foreground">Finalistes</p>
+                {finaleFinalists.map((f) => (
+                  <div
+                    key={f.session_player_id}
+                    className="flex items-center justify-between rounded-lg border border-yellow-600/30 bg-yellow-900/10 px-3 py-2 text-sm"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Crown className="h-4 w-4 text-yellow-500" />
+                      <span className="font-medium text-yellow-300">{f.pseudo}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>

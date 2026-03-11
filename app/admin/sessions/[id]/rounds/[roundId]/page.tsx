@@ -74,6 +74,7 @@ import {
   Lightbulb,
   ShieldCheck,
   Info,
+  Copy,
 } from 'lucide-react';
 
 // ─── Types locaux ────────────────────────────────────────────
@@ -416,6 +417,18 @@ export default function AdminRoundDetailPage({
   function openDeleteQuestion(q: Question) {
     setDeleteQuestionTarget(q);
     setDeleteQuestionOpen(true);
+  }
+
+  async function handleDuplicateQuestion(q: Question) {
+    try {
+      const { data } = await api.post(
+        `/admin/sessions/${sessionId}/rounds/${roundId}/questions/${q.id}/duplicate`
+      );
+      setQuestions((prev) => [...prev, data]);
+      toast.success('Question dupliquée');
+    } catch {
+      toast.error('Impossible de dupliquer la question');
+    }
   }
 
   // ─── Hint handlers ──────────────────────────────────────────
@@ -1302,6 +1315,14 @@ export default function AdminRoundDetailPage({
                             onClick={() => openEditQuestion(q)}
                           >
                             <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDuplicateQuestion(q)}
+                            title="Dupliquer la question"
+                          >
+                            <Copy className="h-4 w-4" />
                           </Button>
                           <Button
                             variant="ghost"

@@ -16,6 +16,8 @@ import type {
   WsSecondChanceLaunched,
   WsSecondChanceRevealed,
   WsFinaleChoicesRevealed,
+  WsFinaleVoteLaunched,
+  WsDuelQuestionsAssigned,
 } from '@/lib/types';
 import { useTimer } from '@/hooks/useTimer';
 
@@ -48,7 +50,15 @@ export function useSessionChannel(sessionId: number | null) {
         const state = useGameStore.getState();
         if (state.phase === 'round_skipped') return;
         state.setQuestion(e.question);
-        startCountdown(e.question.duration);
+        // En duel, seul le joueur assigné lance le countdown
+        const isDuel = state.currentRound?.round_type === 'duel_jackpot' || state.currentRound?.round_type === 'duel_elimination';
+        const isMyTurn = e.question.assigned_player_id === state.sessionPlayerId;
+        if (!isDuel || isMyTurn) {
+          startCountdown(e.question.duration);
+        }
+      })
+      .listen('.duel.questions.assigned', (e: WsDuelQuestionsAssigned) => {
+        useGameStore.getState().setDuelAssignments(e.assignments);
       })
       .listen('.question.closed', (e: WsQuestionClosed) => {
         const state = useGameStore.getState();
@@ -142,8 +152,15 @@ export function useSessionChannel(sessionId: number | null) {
         stopCountdown();
         useGameStore.getState().setGameEnded(e.final_jackpot, e.winners);
       })
+      .listen('.finale.vote.launched', (e: WsFinaleVoteLaunched) => {
+        const state = useGameStore.getState();
+        if (state.phase === 'eliminated' || state.phase === 'game_ended' || state.phase === 'round_skipped') return;
+        useGameStore.setState({ phase: 'finale_choice', finaleFinalists: e.finalists });
+      })
       .listen('.finale.choices.revealed', (e: WsFinaleChoicesRevealed) => {
-        useGameStore.setState({ finaleChoices: e.choices, finaleScenario: e.scenario });
+        const state = useGameStore.getState();
+        if (state.phase === 'eliminated' || state.phase === 'game_ended') return;
+        useGameStore.setState({ finaleChoices: e.choices, finaleScenario: e.scenario, phase: 'finale_result' });
       })
       .listen('.second_chance.launched', (e: WsSecondChanceLaunched) => {
         useGameStore.getState().setSecondChanceQuestion(

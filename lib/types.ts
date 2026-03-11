@@ -328,8 +328,19 @@ export interface WsQuestionLaunched {
     media_type: MediaType;
     duration: number;
     launched_at: string;
+    assigned_player_id?: number | null;
+    assigned_pseudo?: string | null;
     choices?: QuestionChoice[];
   };
+}
+
+export interface WsDuelQuestionsAssigned {
+  assignments: {
+    session_player_id: number;
+    pseudo: string;
+    turn_order: number;
+    question_id: number;
+  }[];
 }
 
 export interface WsAnswerResult {
@@ -411,7 +422,11 @@ export interface WsGameEnded {
 
 export interface WsFinaleChoicesRevealed {
   choices: { session_player_id: number; choice: string; pseudo: string }[];
-  scenario: 'both_continue' | 'one_abandons' | 'both_abandon';
+  scenario: 'all_continue' | 'some_abandon' | 'all_abandon';
+}
+
+export interface WsFinaleVoteLaunched {
+  finalists: { session_player_id: number; pseudo: string }[];
 }
 
 export interface WsTop4Finalized {

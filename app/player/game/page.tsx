@@ -23,6 +23,7 @@ import {
   Eye,
   LogOut,
   AlertTriangle,
+  Swords,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { toast } from 'sonner';
@@ -117,6 +118,10 @@ export default function PlayerGamePage() {
   const scCorrectAnswer = useGameStore((s) => s.scCorrectAnswer);
   const scRevealedChoices = useGameStore((s) => s.scRevealedChoices);
   const markScAnswered = useGameStore((s) => s.markScAnswered);
+  const duelAssignments = useGameStore((s) => s.duelAssignments);
+  const duelCurrentTurn = useGameStore((s) => s.duelCurrentTurn);
+  const finaleChoices = useGameStore((s) => s.finaleChoices);
+  const finaleScenario = useGameStore((s) => s.finaleScenario);
 
   const { startCountdown } = useTimer();
   const sessionPlayerId = useGameStore((s) => s.sessionPlayerId);
@@ -360,6 +365,23 @@ export default function PlayerGamePage() {
           <RoundIntroView round={currentRound} />
         )}
 
+        {/* ── DUEL WAITING (en attente de son tour) ── */}
+        {phase === 'duel_waiting' && (
+          <DuelWaitingView
+            assignments={duelAssignments}
+            currentTurn={duelCurrentTurn}
+            sessionPlayerId={sessionPlayerId}
+          />
+        )}
+
+        {/* ── DUEL DONE (déjà passé) ── */}
+        {phase === 'duel_done' && (
+          <DuelDoneView
+            assignments={duelAssignments}
+            currentTurn={duelCurrentTurn}
+          />
+        )}
+
         {/* ── QUESTION ── */}
         {phase === 'question' && currentQuestion && (
           <QuestionView
@@ -516,6 +538,11 @@ export default function PlayerGamePage() {
         {/* ── FINALE CHOICE ── */}
         {phase === 'finale_choice' && (
           <FinaleChoiceView onChoice={submitFinaleChoice} />
+        )}
+
+        {/* ── FINALE RESULT ── */}
+        {phase === 'finale_result' && (
+          <FinaleResultView choices={finaleChoices} scenario={finaleScenario} />
         )}
 
         {/* ── GAME ENDED ── */}
@@ -885,6 +912,62 @@ function FinaleChoiceView({
   );
 }
 
+function FinaleResultView({
+  choices,
+  scenario,
+}: {
+  choices: { session_player_id: number; choice: string; pseudo: string }[] | null;
+  scenario: string | null;
+}) {
+  const continuers = choices?.filter((c) => c.choice === 'continue') ?? [];
+  const abandoners = choices?.filter((c) => c.choice === 'abandon') ?? [];
+
+  return (
+    <div className="flex flex-col items-center gap-6 text-center">
+      <div className="flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-yellow-500 to-amber-500">
+        <Trophy className="h-14 w-14 text-white" />
+      </div>
+      <h2 className="text-3xl font-bold">Résultat du vote</h2>
+
+      {scenario === 'all_abandon' && (
+        <p className="text-lg text-orange-400">Tous les finalistes ont choisi d&apos;abandonner.</p>
+      )}
+      {scenario === 'all_continue' && (
+        <p className="text-lg text-green-400">Tous les finalistes continuent !</p>
+      )}
+      {scenario === 'some_abandon' && (
+        <p className="text-lg text-amber-400">Certains finalistes abandonnent.</p>
+      )}
+
+      {continuers.length > 0 && (
+        <div className="w-full max-w-sm space-y-2">
+          <p className="text-sm font-semibold text-green-400">Continuent</p>
+          {continuers.map((c) => (
+            <div key={c.session_player_id} className="rounded-lg border border-green-700/50 bg-green-900/20 px-4 py-2 text-green-300 font-medium">
+              {c.pseudo}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {abandoners.length > 0 && (
+        <div className="w-full max-w-sm space-y-2">
+          <p className="text-sm font-semibold text-orange-400">Abandonnent</p>
+          {abandoners.map((c) => (
+            <div key={c.session_player_id} className="rounded-lg border border-orange-700/50 bg-orange-900/20 px-4 py-2 text-orange-300 font-medium">
+              {c.pseudo}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {scenario !== 'all_abandon' && (
+        <p className="text-sm text-gray-500">En attente de la question finale…</p>
+      )}
+    </div>
+  );
+}
+
 function GameEndedView({
   winners,
   finalJackpot,
@@ -925,6 +1008,91 @@ function GameEndedView({
         <LogOut className="mr-2 h-4 w-4" />
         Quitter
       </Button>
+    </div>
+  );
+}
+
+function DuelWaitingView({
+  assignments,
+  currentTurn,
+  sessionPlayerId,
+}: {
+  assignments: { session_player_id: number; pseudo: string; turn_order: number; question_id: number }[];
+  currentTurn: number;
+  sessionPlayerId: number | null;
+}) {
+  const myAssignment = assignments.find(a => a.session_player_id === sessionPlayerId);
+  const currentPlayer = assignments.find(a => a.turn_order === currentTurn);
+
+  return (
+    <div className="flex flex-col items-center gap-6 text-center">
+      <div className="flex h-20 w-20 items-center justify-center rounded-full bg-amber-600/20 animate-pulse">
+        <Swords className="h-10 w-10 text-amber-400" />
+      </div>
+      <h2 className="text-xl font-bold">Duel en cours</h2>
+      {currentPlayer && (
+        <p className="text-gray-400">
+          C&apos;est au tour de <span className="font-semibold text-amber-400">{currentPlayer.pseudo}</span>
+        </p>
+      )}
+      {myAssignment && (
+        <div className="rounded-xl border border-amber-600/30 bg-amber-600/10 px-6 py-3">
+          <p className="text-sm text-gray-400">Votre passage</p>
+          <p className="text-2xl font-bold text-amber-400">Tour {myAssignment.turn_order}</p>
+        </div>
+      )}
+      <div className="w-full max-w-xs space-y-2">
+        {assignments.map((a) => (
+          <div
+            key={a.turn_order}
+            className={clsx(
+              'flex items-center gap-3 rounded-lg px-4 py-2 text-sm border',
+              a.turn_order === currentTurn
+                ? 'border-amber-500/50 bg-amber-500/10 text-amber-300'
+                : a.turn_order < currentTurn
+                  ? 'border-gray-700 bg-gray-800/50 text-gray-500 line-through'
+                  : 'border-gray-700 text-gray-400'
+            )}
+          >
+            <span className={clsx(
+              'flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold',
+              a.turn_order === currentTurn ? 'bg-amber-600' : 'bg-gray-700'
+            )}>
+              {a.turn_order}
+            </span>
+            <span className="font-medium">{a.pseudo}</span>
+            {a.session_player_id === sessionPlayerId && (
+              <span className="ml-auto text-xs text-blue-400">(vous)</span>
+            )}
+          </div>
+        ))}
+      </div>
+      <p className="text-sm text-gray-500">Attendez votre tour…</p>
+    </div>
+  );
+}
+
+function DuelDoneView({
+  assignments,
+  currentTurn,
+}: {
+  assignments: { session_player_id: number; pseudo: string; turn_order: number; question_id: number }[];
+  currentTurn: number;
+}) {
+  const currentPlayer = assignments.find(a => a.turn_order === currentTurn);
+
+  return (
+    <div className="flex flex-col items-center gap-6 text-center">
+      <div className="flex h-20 w-20 items-center justify-center rounded-full bg-green-600/20">
+        <CheckCircle2 className="h-10 w-10 text-green-400" />
+      </div>
+      <h2 className="text-xl font-bold text-green-400">Vous êtes passé !</h2>
+      {currentPlayer && (
+        <p className="text-gray-400">
+          C&apos;est au tour de <span className="font-semibold text-amber-400">{currentPlayer.pseudo}</span>
+        </p>
+      )}
+      <p className="text-sm text-gray-500">En attente des autres joueurs…</p>
     </div>
   );
 }

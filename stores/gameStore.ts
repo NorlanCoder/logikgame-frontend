@@ -7,8 +7,11 @@ import type {
   WsRoundStarted,
   WsGameEnded,
   WsSecondChanceLaunched,
+  WsDuelQuestionsAssigned,
   RoundType,
 } from '@/lib/types';
+
+type DuelAssignment = WsDuelQuestionsAssigned['assignments'][number];
 
 type PlayerGamePhase =
   | 'waiting'        // En attente du début ou d'une question
@@ -18,6 +21,8 @@ type PlayerGamePhase =
   | 'result'         // Résultat affiché (correct/incorrect)
   | 'eliminated'     // Le joueur a été éliminé
   | 'round_skipped'  // Manche passée (manche 4), en attente de la suivante
+  | 'duel_waiting'   // En attente de son tour (manches 6/7)
+  | 'duel_done'      // Déjà passé (manches 6/7)
   | 'second_chance_danger'  // Mauvaise réponse en manche 3, en attente SC
   | 'second_chance_safe'    // Bonne réponse en manche 3, en attente question suivante
   | 'second_chance_waiting' // SC lancée, joueur safe attend
@@ -25,6 +30,7 @@ type PlayerGamePhase =
   | 'sc_answered'    // Réponse SC envoyée, en attente résultat
   | 'sc_result'      // Résultat SC affiché
   | 'finale_choice'  // Choix finale (continuer/abandonner)
+  | 'finale_result'  // Résultat des choix de la finale révélés
   | 'game_ended';    // Fin de partie
 
 interface RoundInfo {
@@ -74,6 +80,7 @@ interface GameState {
   finalJackpot: number | null;
 
   // Finale (Manche 8)
+  finaleFinalists: { session_player_id: number; pseudo: string }[] | null;
   finaleChoices: { session_player_id: number; choice: string; pseudo: string }[] | null;
   finaleScenario: string | null;
 
@@ -84,6 +91,10 @@ interface GameState {
   scCorrectAnswer: string | null;
   scRevealedChoices: (QuestionChoice & { is_correct: boolean })[] | null;
   scIsCorrect: boolean | null;
+
+  // Duels (Manches 6/7)
+  duelAssignments: DuelAssignment[];
+  duelCurrentTurn: number;   // turn_order actuellement en cours
 
   // Actions
   setPhase: (phase: PlayerGamePhase) => void;
@@ -105,6 +116,7 @@ interface GameState {
   markScAnswered: () => void;
   setScResult: (isCorrect: boolean, correctAnswer: string) => void;
   setScRevealedChoices: (choices: (QuestionChoice & { is_correct: boolean })[], correctAnswer: string) => void;
+  setDuelAssignments: (assignments: DuelAssignment[]) => void;
   resetQuestion: () => void;
   resetGame: () => void;
 }
@@ -141,6 +153,7 @@ export const useGameStore = create<GameState>((set) => ({
   winners: null,
   finalJackpot: null,
 
+  finaleFinalists: null,
   finaleChoices: null,
   finaleScenario: null,
 
@@ -151,16 +164,16 @@ export const useGameStore = create<GameState>((set) => ({
   scRevealedChoices: null,
   scIsCorrect: null,
 
+  duelAssignments: [],
+  duelCurrentTurn: 0,
+
   setPhase: (phase) => set({ phase }),
 
   setRound: (round) => {
     const state = useGameStore.getState();
     if (state.phase === 'eliminated' || state.phase === 'game_ended') return;
-    // En finale, les finalistes doivent voir le choix Continuer/Abandonner
-    const nextPhase =
-      round.round_type === 'finale' && state.playerStatus === 'finalist'
-        ? 'finale_choice'
-        : 'round_intro';
+    // Le vote de la finale sera déclenché par l'admin via l'événement finale.vote.launched
+    const nextPhase = 'round_intro';
     // round_skipped se réinitialise quand une nouvelle manche commence
     set({
       currentRound: round,
@@ -178,12 +191,62 @@ export const useGameStore = create<GameState>((set) => ({
       removedChoiceIds: [],
       revealedLetters: [],
       hintText: null,
+      duelAssignments: [],
+      duelCurrentTurn: 0,
     });
   },
 
   setQuestion: (question) => {
     const state = useGameStore.getState();
     if (state.phase === 'eliminated' || state.phase === 'game_ended' || state.phase === 'round_skipped') return;
+
+    // Manches duel (6/7) : seul le joueur assigné voit la question
+    const isDuel = state.currentRound?.round_type === 'duel_jackpot' || state.currentRound?.round_type === 'duel_elimination';
+    const assignedPlayerId = question.assigned_player_id ?? null;
+
+    if (isDuel && assignedPlayerId) {
+      const isMyTurn = assignedPlayerId === state.sessionPlayerId;
+      // Trouver le turn_order courant
+      const assignment = state.duelAssignments.find(a => a.question_id === question.id);
+      const turnOrder = assignment?.turn_order ?? state.duelCurrentTurn + 1;
+
+      if (isMyTurn) {
+        set({
+          currentQuestion: question,
+          phase: 'question',
+          selectedChoiceId: null,
+          answerValue: '',
+          hasAnswered: false,
+          isCorrect: null,
+          correctAnswer: null,
+          revealedChoices: null,
+          timerSeconds: question.duration,
+          eliminatedPlayers: [],
+          secondChanceQuestion: null,
+          mainQuestionId: null,
+          inDangerCount: 0,
+          scCorrectAnswer: null,
+          scRevealedChoices: null,
+          scIsCorrect: null,
+          hintAvailable: false,
+          removedChoiceIds: [],
+          revealedLetters: [],
+          hintText: null,
+          duelCurrentTurn: turnOrder,
+        });
+      } else {
+        // Pas mon tour — vérifier si j'ai déjà passé ou si j'attends
+        const myAssignments = state.duelAssignments.filter(a => a.session_player_id === state.sessionPlayerId);
+        const allMyTurnsDone = myAssignments.length > 0 && myAssignments.every(a => a.turn_order < turnOrder);
+        set({
+          currentQuestion: question,
+          phase: allMyTurnsDone ? 'duel_done' : 'duel_waiting',
+          duelCurrentTurn: turnOrder,
+        });
+      }
+      return;
+    }
+
     set({
       currentQuestion: question,
       phase: 'question',
@@ -312,9 +375,26 @@ export const useGameStore = create<GameState>((set) => ({
     set({ scRevealedChoices: choices, scCorrectAnswer: correctAnswer });
   },
 
+  setDuelAssignments: (assignments) => {
+    const state = useGameStore.getState();
+    if (state.phase === 'eliminated' || state.phase === 'game_ended') return;
+    // Trouver si mon prochain tour est le premier
+    const myFirstAssignment = assignments.find(a => a.session_player_id === state.sessionPlayerId);
+    set({
+      duelAssignments: assignments,
+      duelCurrentTurn: 0,
+      phase: myFirstAssignment?.turn_order === 1 ? 'round_intro' : 'duel_waiting',
+    });
+  },
+
   resetQuestion: () => {
     const state = useGameStore.getState();
     if (state.phase === 'eliminated' || state.phase === 'game_ended' || state.phase === 'round_skipped') return;
+
+    // En duel, après un reset question, rester dans le mode duel
+    const isDuel = state.currentRound?.round_type === 'duel_jackpot' || state.currentRound?.round_type === 'duel_elimination';
+    const nextPhase = isDuel && state.duelAssignments.length > 0 ? 'duel_waiting' : 'waiting';
+
     set({
       currentQuestion: null,
       selectedChoiceId: null,
@@ -324,7 +404,7 @@ export const useGameStore = create<GameState>((set) => ({
       correctAnswer: null,
       revealedChoices: null,
       timerSeconds: 0,
-      phase: 'waiting',
+      phase: nextPhase,
       eliminatedPlayers: [],
       secondChanceQuestion: null,
       mainQuestionId: null,
@@ -361,9 +441,12 @@ export const useGameStore = create<GameState>((set) => ({
       eliminatedPlayers: [],
       winners: null,
       finalJackpot: null,
+      finaleFinalists: null,
       finaleChoices: null,
       finaleScenario: null,
       secondChanceQuestion: null,
       mainQuestionId: null,
+      duelAssignments: [],
+      duelCurrentTurn: 0,
     }),
 }));

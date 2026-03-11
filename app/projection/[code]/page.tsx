@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import { useEcho } from '@/hooks/useEcho';
 import { Timer } from '@/components/shared/Timer';
-import { Loader2, Trophy, Users, Zap, CheckCircle2, XCircle, Shield } from 'lucide-react';
+import { Loader2, Trophy, Users, Zap, CheckCircle2, XCircle, Shield, Swords } from 'lucide-react';
 import type {
   QuestionChoice,
   WsQuestionLaunched,
@@ -21,6 +21,9 @@ import type {
   WsSecondChanceRevealed,
   WsSecondChanceClosed,
   WsTop4Finalized,
+  WsDuelQuestionsAssigned,
+  WsFinaleVoteLaunched,
+  WsFinaleChoicesRevealed,
 } from '@/lib/types';
 
 // ─── Types locaux pour la projection ─────────────────────────
@@ -53,7 +56,7 @@ interface ProjectionState {
   questionStats: { answers_received: number; correct_count: number; eliminated_count: number; in_danger_count: number; in_danger_players: string[] } | null;
   playerResults: { pseudo: string; is_correct: boolean; is_timeout: boolean }[];
   scPlayerResults: { pseudo: string; is_correct: boolean; is_timeout: boolean }[];
-  phase: 'waiting' | 'round_intro' | 'question' | 'question_closed' | 'answer_revealed' | 'eliminated' | 'game_ended' | 'sc_question' | 'sc_closed' | 'sc_revealed' | 'top4_finalized';
+  phase: 'waiting' | 'round_intro' | 'question' | 'question_closed' | 'answer_revealed' | 'eliminated' | 'game_ended' | 'sc_question' | 'sc_closed' | 'sc_revealed' | 'top4_finalized' | 'duel_assigned' | 'finale_vote' | 'finale_choices_revealed';
   top4Rankings: { pseudo: string; correct_answers_count: number; total_response_time_ms: number; rank: number; is_qualified: boolean }[];
   winners: { pseudo: string; final_gain: number }[];
   scQuestion: {
@@ -67,6 +70,11 @@ interface ProjectionState {
   } | null;
   scCorrectAnswer: string | null;
   scRevealedChoices: (QuestionChoice & { is_correct: boolean })[] | null;
+  duelAssignments: WsDuelQuestionsAssigned['assignments'];
+  duelCurrentPlayer: string | null;
+  finaleFinalists: { session_player_id: number; pseudo: string }[];
+  finaleChoices: { session_player_id: number; choice: string; pseudo: string }[];
+  finaleScenario: string | null;
 }
 
 const initialState: ProjectionState = {
@@ -89,6 +97,11 @@ const initialState: ProjectionState = {
   scCorrectAnswer: null,
   scRevealedChoices: null,
   top4Rankings: [],
+  duelAssignments: [],
+  duelCurrentPlayer: null,
+  finaleFinalists: [],
+  finaleChoices: [],
+  finaleScenario: null,
 };
 
 export default function ProjectionPage({
@@ -218,11 +231,21 @@ export default function ProjectionPage({
           playerResults: [],
           scPlayerResults: [],
           phase: 'round_intro',
+          duelAssignments: [],
+          duelCurrentPlayer: null,
         }));
         stopCountdown();
         setTimerSeconds(0);
       })
+      .listen('.duel.questions.assigned', (e: WsDuelQuestionsAssigned) => {
+        setState((prev) => ({
+          ...prev,
+          duelAssignments: e.assignments,
+          phase: 'duel_assigned',
+        }));
+      })
       .listen('.question.launched', (e: WsQuestionLaunched) => {
+        const assignedPseudo = e.question.assigned_pseudo ?? null;
         setState((prev) => ({
           ...prev,
           currentQuestion: {
@@ -245,6 +268,7 @@ export default function ProjectionPage({
           playerResults: [],
           scPlayerResults: [],
           phase: 'question',
+          duelCurrentPlayer: assignedPseudo,
         }));
         startCountdown(e.question.duration);
       })
@@ -357,6 +381,21 @@ export default function ProjectionPage({
           top4Rankings: e.rankings,
           phase: 'top4_finalized',
         }));
+      })
+      .listen('.finale.vote.launched', (e: WsFinaleVoteLaunched) => {
+        setState((prev) => ({
+          ...prev,
+          finaleFinalists: e.finalists,
+          phase: 'finale_vote',
+        }));
+      })
+      .listen('.finale.choices.revealed', (e: WsFinaleChoicesRevealed) => {
+        setState((prev) => ({
+          ...prev,
+          finaleChoices: e.choices,
+          finaleScenario: e.scenario,
+          phase: 'finale_choices_revealed',
+        }));
       });
 
     return () => {
@@ -417,6 +456,7 @@ export default function ProjectionPage({
         {state.phase === 'game_ended' && <GameEndedView state={state} />}
         {state.phase === 'waiting' && <WaitingView state={state} />}
         {state.phase === 'round_intro' && <RoundIntroView state={state} />}
+        {state.phase === 'duel_assigned' && <DuelAssignedView state={state} />}
         {state.phase === 'question' && (
           <QuestionView state={state} timerSeconds={timerSeconds} timerTotal={timerTotal} />
         )}
@@ -428,6 +468,8 @@ export default function ProjectionPage({
         {state.phase === 'sc_closed' && <ScClosedView state={state} />}
         {state.phase === 'sc_revealed' && <ScRevealedView state={state} />}
         {state.phase === 'top4_finalized' && <Top4FinalizedView state={state} />}
+        {state.phase === 'finale_vote' && <FinaleVoteView state={state} />}
+        {state.phase === 'finale_choices_revealed' && <FinaleChoicesRevealedView state={state} />}
       </main>
 
       {/* Éliminés */}
@@ -493,6 +535,14 @@ function QuestionView({
   if (!q) return null;
   return (
     <div className="flex w-full max-w-5xl flex-col items-center gap-8">
+      {/* Duel player indicator */}
+      {state.duelCurrentPlayer && (
+        <div className="flex items-center gap-3 rounded-full border border-amber-600/40 bg-amber-600/10 px-6 py-3">
+          <Swords className="h-6 w-6 text-amber-400" />
+          <span className="text-xl font-bold text-amber-300">{state.duelCurrentPlayer}</span>
+        </div>
+      )}
+
       {/* Timer */}
       <Timer seconds={timerSeconds} total={timerTotal} size="lg" />
 
@@ -909,6 +959,112 @@ function GameEndedView({ state }: { state: ProjectionState }) {
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+function DuelAssignedView({ state }: { state: ProjectionState }) {
+  return (
+    <div className="flex flex-col items-center gap-8 text-center animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <Swords className="h-16 w-16 text-amber-400" />
+      <h2 className="text-4xl font-extrabold">Ordre de passage</h2>
+      <div className="space-y-3 w-full max-w-lg">
+        {state.duelAssignments.map((a) => (
+          <div
+            key={a.turn_order}
+            className="flex items-center gap-4 rounded-xl border border-amber-600/30 bg-amber-600/10 px-6 py-4"
+          >
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-600 text-lg font-bold">
+              {a.turn_order}
+            </span>
+            <span className="text-2xl font-semibold text-amber-300">{a.pseudo}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FinaleVoteView({ state }: { state: ProjectionState }) {
+  return (
+    <div className="flex flex-col items-center gap-8 text-center animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <Trophy className="h-16 w-16 text-yellow-400" />
+      <h2 className="text-4xl font-extrabold">La Finale</h2>
+      <p className="text-xl text-gray-400">Les finalistes font leur choix…</p>
+      <div className="space-y-3 w-full max-w-lg">
+        {state.finaleFinalists.map((f) => (
+          <div
+            key={f.session_player_id}
+            className="flex items-center gap-4 rounded-xl border border-yellow-600/30 bg-yellow-600/10 px-6 py-4"
+          >
+            <Trophy className="h-8 w-8 text-yellow-500" />
+            <span className="text-2xl font-semibold text-yellow-300">{f.pseudo}</span>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center gap-2 text-gray-500">
+        <Loader2 className="h-5 w-5 animate-spin" />
+        <span>En attente des choix…</span>
+      </div>
+    </div>
+  );
+}
+
+function FinaleChoicesRevealedView({ state }: { state: ProjectionState }) {
+  const continuers = state.finaleChoices.filter((c) => c.choice === 'continue');
+  const abandoners = state.finaleChoices.filter((c) => c.choice === 'abandon');
+
+  return (
+    <div className="flex flex-col items-center gap-8 text-center animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <Trophy className="h-16 w-16 text-yellow-400" />
+      <h2 className="text-4xl font-extrabold">Résultat du vote</h2>
+
+      {state.finaleScenario === 'all_abandon' && (
+        <p className="text-2xl text-orange-400">Tous les finalistes ont choisi d&apos;abandonner !</p>
+      )}
+      {state.finaleScenario === 'all_continue' && (
+        <p className="text-2xl text-green-400">Tous les finalistes continuent !</p>
+      )}
+      {state.finaleScenario === 'some_abandon' && (
+        <p className="text-2xl text-amber-400">Certains finalistes abandonnent…</p>
+      )}
+
+      <div className="flex w-full max-w-4xl gap-6">
+        {continuers.length > 0 && (
+          <div className="flex-1 rounded-xl border border-green-700/50 bg-green-900/10 p-6">
+            <div className="mb-4 flex items-center justify-center gap-2 text-green-400">
+              <CheckCircle2 className="h-6 w-6" />
+              <span className="text-xl font-semibold">Continuent ({continuers.length})</span>
+            </div>
+            <div className="space-y-2">
+              {continuers.map((c) => (
+                <div key={c.session_player_id} className="rounded-lg bg-green-900/40 px-4 py-3 text-xl font-medium text-green-300">
+                  {c.pseudo}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {abandoners.length > 0 && (
+          <div className="flex-1 rounded-xl border border-orange-700/50 bg-orange-900/10 p-6">
+            <div className="mb-4 flex items-center justify-center gap-2 text-orange-400">
+              <XCircle className="h-6 w-6" />
+              <span className="text-xl font-semibold">Abandonnent ({abandoners.length})</span>
+            </div>
+            <div className="space-y-2">
+              {abandoners.map((c) => (
+                <div key={c.session_player_id} className="rounded-lg bg-orange-900/40 px-4 py-3 text-xl font-medium text-orange-300">
+                  {c.pseudo}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {state.finaleScenario !== 'all_abandon' && (
+        <p className="text-lg text-gray-500">En attente de la question finale…</p>
       )}
     </div>
   );
