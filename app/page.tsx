@@ -69,6 +69,12 @@ export default function HomePage() {
         </h1>
         <div className="flex gap-3">
           <Link
+            href="/diag/realtime"
+            className="rounded-lg border border-cyan-600/60 px-4 py-2 text-sm font-medium text-cyan-300 transition-colors hover:bg-cyan-900/40"
+          >
+            Test Prod Temps Reel
+          </Link>
+          <Link
             href="/admin/login"
             className="rounded-lg border border-gray-700 px-4 py-2 text-sm font-medium transition-colors hover:bg-gray-800"
           >
