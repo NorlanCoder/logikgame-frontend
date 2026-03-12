@@ -93,6 +93,10 @@ export default function AdminSessionDetailPage({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
+  // Duplicate state
+  const [duplicateOpen, setDuplicateOpen] = useState(false);
+  const [duplicateLoading, setDuplicateLoading] = useState(false);
+
   // Lifecycle action state
   const [actionLoading, setActionLoading] = useState(false);
   const [actionConfirmOpen, setActionConfirmOpen] = useState(false);
@@ -211,6 +215,23 @@ export default function AdminSessionDetailPage({
     } catch {
       toast.error('Impossible de supprimer la session');
       setDeleteLoading(false);
+    }
+  }
+
+  async function handleDuplicate() {
+    setDuplicateLoading(true);
+    try {
+      const res = await api.post<{ data: Session }>(
+        `/admin/sessions/${id}/duplicate`
+      );
+      const created = res.data.data ?? (res.data as unknown as Session);
+      toast.success('Session dupliquée avec succès');
+      router.push(`/admin/sessions/${created.id}`);
+    } catch {
+      toast.error('Impossible de dupliquer la session');
+    } finally {
+      setDuplicateLoading(false);
+      setDuplicateOpen(false);
     }
   }
 
@@ -548,6 +569,40 @@ export default function AdminSessionDetailPage({
               </DialogContent>
             </Dialog>
           )}
+
+          <Dialog open={duplicateOpen} onOpenChange={setDuplicateOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm">
+                <Copy className="mr-1 h-4 w-4" />
+                Dupliquer
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Dupliquer la session</DialogTitle>
+                <DialogDescription>
+                  Une copie de &laquo; {currentSession.name} &raquo; sera créée
+                  avec toutes les manches, questions et la pré-sélection. Les
+                  joueurs et données de jeu ne seront pas copiés.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button
+                  variant="ghost"
+                  onClick={() => setDuplicateOpen(false)}
+                >
+                  Annuler
+                </Button>
+                <Button
+                  onClick={handleDuplicate}
+                  disabled={duplicateLoading}
+                >
+                  {duplicateLoading && <Loader2 className="animate-spin" />}
+                  Dupliquer
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           {canDelete && (
             <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>

@@ -64,7 +64,6 @@ import {
   Trash2,
   Loader2,
   Plus,
-  GripVertical,
   Check,
   X,
   Clock,
@@ -952,26 +951,7 @@ export default function AdminRoundDetailPage({
                     </div>
                   </div>
 
-                  {/* Ordre */}
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="q-order">
-                      <GripVertical className="mr-1 inline h-3.5 w-3.5" />
-                      Ordre d&apos;affichage
-                    </Label>
-                    <Input
-                      id="q-order"
-                      type="number"
-                      min={1}
-                      value={questionForm.display_order}
-                      onChange={(e) =>
-                        setQuestionForm((f) => ({
-                          ...f,
-                          display_order: Number(e.target.value),
-                        }))
-                      }
-                      required
-                    />
-                  </div>
+                  {/* Ordre (auto-calculé, masqué) */}
 
                   {/* Choix QCM */}
                   {questionForm.answer_type === 'qcm' && (
